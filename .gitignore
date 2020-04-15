@@ -1,5 +1,7 @@
 /target
 /libsrt-sys/target
+/libsrt-sys/libsrt/*
+!/libsrt-sys/libsrt/tclkit
 Cargo.lock
 
 .vscode
