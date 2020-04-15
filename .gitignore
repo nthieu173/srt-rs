@@ -1,2 +1,5 @@
 /target
+/libsrt-sys/target
 Cargo.lock
+
+.vscode
