@@ -5,6 +5,8 @@ authors = ["Hieu Nguyen <nthieu173@gmail.com>"]
 edition = "2018"
 lincense = "MPLv2.0"
 links = "srt"
+build = "build.rs"
+repository = "https://github.com/nthieu173/srt-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
