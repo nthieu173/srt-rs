@@ -12,6 +12,7 @@ fn main() {
     let mut configure = PathBuf::from("..");
     configure.push("srt-src");
     configure.push("configure");
+    env::set_var("OUT_DIR", "libsrt");
     env::set_current_dir("libsrt").expect("failed to set current dir to libsrt");
     Command::new(tcl_shell)
         .arg(configure)
