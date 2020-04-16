@@ -3,6 +3,7 @@ name = "libsrt-sys"
 version = "1.4.1"
 authors = ["Hieu Nguyen <nthieu173@gmail.com>"]
 edition = "2018"
+lincense = "MPLv2.0"
 links = "srt"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

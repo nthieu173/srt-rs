@@ -1,4 +1,7 @@
-use libc::{c_char, c_int, c_void, in_addr, linger, sockaddr, sockaddr_in, AF_INET};
+use libc::{
+    c_char, c_int, c_void, in6_addr, in_addr, linger, sockaddr, sockaddr_in, sockaddr_in6, AF_INET,
+    AF_INET6,
+};
 
 use libsrt_sys as srt;
 
@@ -6,7 +9,7 @@ use std::{
     io::{self, Read, Write},
     iter::FromIterator,
     mem,
-    net::{Ipv4Addr, SocketAddrV4},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
     result,
 };
 
@@ -17,22 +20,42 @@ type Result<T> = result::Result<T, SrtError>;
 pub struct SrtBuilder {
     opt_vec: Vec<SrtPreConnectOpt>,
 }
+
 impl SrtBuilder {
     pub fn new() -> Self {
         Self {
             opt_vec: Vec::new(),
         }
     }
-    pub fn connect(self, source: SocketAddrV4, target: SocketAddrV4) -> Result<SrtSocket> {
-        let socket = SrtSocket::connect_bind(source, target)?;
+    pub fn connect<A: ToSocketAddrs, B: ToSocketAddrs>(
+        self,
+        local: A,
+        remote: B,
+    ) -> Result<SrtSocket> {
+        let socket = SrtSocket::bind(local)?;
         self.config_socket(&socket)?;
+        socket.connect(remote)?;
         Ok(socket)
     }
-    pub fn listen(self, addr: SocketAddrV4, backlog: i32) -> Result<SrtSocket> {
+    pub fn listen<A: ToSocketAddrs>(self, addr: A, backlog: i32) -> Result<SrtSocket> {
         let socket = SrtSocket::bind(addr)?;
+        self.config_socket(&socket)?;
         socket.listen(backlog)?;
         Ok(socket)
     }
+    pub fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(
+        self,
+        local: A,
+        remote: B,
+    ) -> Result<SrtSocket> {
+        let socket = SrtSocket::new();
+        self.config_socket(&socket)?;
+        socket.rendezvous(local, remote)?;
+        Ok(socket)
+    }
+}
+
+impl SrtBuilder {
     pub fn set_connection_timeout(mut self, msecs: i32) {
         self.opt_vec.push(SrtPreConnectOpt::ConnTimeO(msecs));
     }
@@ -211,73 +234,118 @@ pub enum SrtSocketStatus {
     NonExist,
 }
 
+#[derive(Debug)]
 pub struct SrtSocket {
     id: i32,
 }
 
+fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
+    let ip = addr.sin_addr.s_addr.to_le_bytes();
+    SocketAddrV4::new(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3]), addr.sin_port)
+}
+
+fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
+    let ip = addr.sin6_addr.s6_addr;
+    SocketAddrV6::new(
+        Ipv6Addr::new(
+            u16::from_be_bytes([ip[0], ip[1]]),
+            u16::from_be_bytes([ip[2], ip[3]]),
+            u16::from_be_bytes([ip[4], ip[5]]),
+            u16::from_be_bytes([ip[6], ip[7]]),
+            u16::from_be_bytes([ip[8], ip[9]]),
+            u16::from_be_bytes([ip[10], ip[11]]),
+            u16::from_be_bytes([ip[12], ip[13]]),
+            u16::from_be_bytes([ip[14], ip[15]]),
+        ),
+        addr.sin6_port,
+        addr.sin6_flowinfo,
+        addr.sin6_scope_id,
+    )
+}
+
 //Public operational methods
 impl SrtSocket {
-    pub fn local_addr(&self) -> Result<SocketAddrV4> {
-        let local_addr: SocketAddrV4;
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        let local_addr: SocketAddr;
         let result;
         unsafe {
-            let mut addr = sockaddr_in {
-                sin_family: 0,
-                sin_port: 0,
-                sin_addr: in_addr { s_addr: 0 },
-                sin_zero: [0; 8],
+            let mut addr = sockaddr_in6 {
+                sin6_family: 0,
+                sin6_port: 0,
+                sin6_flowinfo: 0,
+                sin6_addr: in6_addr { s6_addr: [0; 16] },
+                sin6_scope_id: 0,
             };
-            let mut _addrlen: c_int = 0;
+            let mut addrlen: c_int = 0;
             result = srt::srt_getsockname(
                 self.id,
-                &mut addr as *mut sockaddr_in as *mut sockaddr,
-                &mut _addrlen as *mut c_int,
+                &mut addr as *mut sockaddr_in6 as *mut sockaddr,
+                &mut addrlen as *mut c_int,
             );
-            let ip = addr.sin_addr.s_addr.to_be_bytes();
-            local_addr =
-                SocketAddrV4::new(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3]), addr.sin_port);
+            local_addr = match addr.sin6_family as i32 {
+                AF_INET => {
+                    let addr = *(&addr as *const sockaddr_in6 as *const sockaddr_in);
+                    SocketAddr::V4(create_socket_addr_v4(addr))
+                }
+                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
+                _ => unreachable!("libsrt returned a socket with an unrecognized family"),
+            };
         };
         error::wrap_result(local_addr, result)
     }
-    pub fn peer_addr(&self) -> Result<SocketAddrV4> {
-        let peer_addr: SocketAddrV4;
+    pub fn peer_addr(&self) -> Result<SocketAddr> {
+        let peer_addr: SocketAddr;
         let result;
         unsafe {
-            let mut addr = sockaddr_in {
-                sin_family: 0,
-                sin_port: 0,
-                sin_addr: in_addr { s_addr: 0 },
-                sin_zero: [0; 8],
+            let mut addr = sockaddr_in6 {
+                sin6_family: 0,
+                sin6_port: 0,
+                sin6_flowinfo: 0,
+                sin6_addr: in6_addr { s6_addr: [0; 16] },
+                sin6_scope_id: 0,
             };
-            let mut _addrlen: c_int = 0;
+            let mut addrlen: c_int = 0;
             result = srt::srt_getpeername(
                 self.id,
-                &mut addr as *mut sockaddr_in as *mut sockaddr,
-                &mut _addrlen as *mut c_int,
+                &mut addr as *mut sockaddr_in6 as *mut sockaddr,
+                &mut addrlen as *mut c_int,
             );
-            let ip = addr.sin_addr.s_addr.to_be_bytes();
-            peer_addr = SocketAddrV4::new(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3]), addr.sin_port);
+            peer_addr = match addr.sin6_family as i32 {
+                AF_INET => {
+                    let addr = *(&addr as *const sockaddr_in6 as *const sockaddr_in);
+                    SocketAddr::V4(create_socket_addr_v4(addr))
+                }
+                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
+                _ => unreachable!("libsrt returned a socket with an unrecognized family"),
+            };
         };
         error::wrap_result(peer_addr, result)
     }
-    pub fn accept(&self) -> Result<(SrtSocket, SocketAddrV4)> {
+    pub fn accept(&self) -> Result<(SrtSocket, SocketAddr)> {
         let peer_id;
-        let peer_addr: SocketAddrV4;
+        let peer_addr: SocketAddr;
         unsafe {
-            let mut addr = sockaddr_in {
-                sin_family: 0,
-                sin_port: 0,
-                sin_addr: in_addr { s_addr: 0 },
-                sin_zero: [0; 8],
+            let mut addr = sockaddr_in6 {
+                sin6_family: 0,
+                sin6_port: 0,
+                sin6_flowinfo: 0,
+                sin6_addr: in6_addr { s6_addr: [0; 16] },
+                sin6_scope_id: 0,
             };
             let mut _addrlen: c_int = 0;
             peer_id = srt::srt_accept(
                 self.id,
-                &mut addr as *mut sockaddr_in as *mut sockaddr,
+                &mut addr as *mut sockaddr_in6 as *mut sockaddr,
                 &mut _addrlen as *mut c_int,
             );
-            let ip = addr.sin_addr.s_addr.to_be_bytes();
-            peer_addr = SocketAddrV4::new(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3]), addr.sin_port);
+            peer_addr = match addr.sin6_family as i32 {
+                AF_INET => {
+                    let addr = *(&addr as *const sockaddr_in6 as *const sockaddr_in);
+                    SocketAddr::V4(create_socket_addr_v4(addr))
+                }
+                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
+                f => unreachable!("libsrt returned a socket with an unrecognized family {}", f),
+            };
         };
         Ok((SrtSocket { id: peer_id }, peer_addr))
     }
@@ -823,7 +891,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::InputBW,
                 &bytes_per_sec as *const i64 as *const c_void,
-                mem::size_of::<i64>() as i32,
+                mem::size_of::<i64>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -835,7 +903,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::OHeadBW,
                 &per_cent as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -847,7 +915,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::RcvTimeO,
                 &msecs as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -859,7 +927,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::SndSyn,
                 &blocking as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -871,12 +939,13 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::SndTimeO,
                 &msecs as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
     }
 }
+
 impl Write for SrtSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let size;
@@ -903,55 +972,139 @@ impl Read for SrtSocket {
     }
 }
 
+//Private methods
 impl SrtSocket {
-    fn bind(addr: SocketAddrV4) -> Result<Self> {
-        let id = unsafe { srt::srt_create_socket() };
-        let addr = sockaddr_in {
-            sin_family: AF_INET as u16,
-            sin_port: addr.port(),
-            sin_addr: in_addr {
-                s_addr: u32::from_be_bytes(addr.ip().octets()),
-            },
-            sin_zero: [0; 8],
-        };
-        let result;
-        unsafe {
-            result = srt::srt_bind(
-                id,
-                &addr as *const sockaddr_in as *const sockaddr,
-                mem::size_of::<sockaddr_in>() as i32,
-            );
+    fn new() -> Self {
+        Self {
+            id: unsafe { srt::srt_create_socket() },
         }
-        error::wrap_result(Self { id }, result)
     }
-    fn connect_bind(source: SocketAddrV4, target: SocketAddrV4) -> Result<Self> {
-        let id = unsafe { srt::srt_create_socket() };
-        let source_addr = sockaddr_in {
-            sin_family: AF_INET as u16,
-            sin_port: source.port(),
-            sin_addr: in_addr {
-                s_addr: u32::from_be_bytes(source.ip().octets()),
-            },
-            sin_zero: [0; 8],
-        };
-        let target_addr = sockaddr_in {
-            sin_family: AF_INET as u16,
-            sin_port: target.port(),
-            sin_addr: in_addr {
-                s_addr: u32::from_be_bytes(target.ip().octets()),
-            },
-            sin_zero: [0; 8],
-        };
-        let result;
-        unsafe {
-            result = srt::srt_connect_bind(
-                id,
-                &source_addr as *const sockaddr_in as *const sockaddr,
-                &target_addr as *const sockaddr_in as *const sockaddr,
-                mem::size_of::<sockaddr_in>() as i32,
-            );
+    fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
+        if let Ok(addrs) = addrs.to_socket_addrs() {
+            let socket = SrtSocket::new();
+            for addr in addrs {
+                match addr {
+                    SocketAddr::V4(addr) => {
+                        let addr = create_sockaddr_in(addr);
+                        let result;
+                        unsafe {
+                            result = srt::srt_bind(
+                                socket.id,
+                                &addr as *const sockaddr_in as *const sockaddr,
+                                mem::size_of::<sockaddr_in>() as c_int,
+                            );
+                        }
+                        return error::wrap_result(socket, result);
+                    }
+                    SocketAddr::V6(addr) => {
+                        let addr = create_sockaddr_in6(addr);
+                        let result;
+                        unsafe {
+                            result = srt::srt_bind(
+                                socket.id,
+                                &addr as *const sockaddr_in6 as *const sockaddr,
+                                mem::size_of::<sockaddr_in6>() as c_int,
+                            );
+                        }
+                        return error::wrap_result(socket, result);
+                    }
+                }
+            }
         }
-        error::wrap_result(Self { id }, result)
+        Err(SrtError::SockFail)
+    }
+    fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(&self, local: A, remote: B) -> Result<()> {
+        let local_addr;
+        if let Ok(mut addr) = local.to_socket_addrs() {
+            local_addr = addr.next();
+        } else {
+            return Err(SrtError::SockFail);
+        }
+        let remote_addr;
+        if let Ok(mut addr) = remote.to_socket_addrs() {
+            remote_addr = addr.next();
+        } else {
+            return Err(SrtError::SockFail);
+        }
+        match (local_addr, remote_addr) {
+            (Some(SocketAddr::V4(local)), Some(SocketAddr::V4(remote))) => {
+                println!("{} {}", local, remote);
+                let local_addr = create_sockaddr_in(local);
+                let remote_addr = create_sockaddr_in(remote);
+                let result;
+                unsafe {
+                    result = srt::srt_rendezvous(
+                        self.id,
+                        &local_addr as *const sockaddr_in as *const sockaddr,
+                        mem::size_of::<sockaddr_in>() as c_int,
+                        &remote_addr as *const sockaddr_in as *const sockaddr,
+                        mem::size_of::<sockaddr_in>() as c_int,
+                    );
+                }
+                error::wrap_result((), result)
+            }
+            (Some(SocketAddr::V6(local)), Some(SocketAddr::V6(remote))) => {
+                let local_addr = create_sockaddr_in6(local);
+                let remote_addr = create_sockaddr_in6(remote);
+                let result;
+                unsafe {
+                    result = srt::srt_rendezvous(
+                        self.id,
+                        &local_addr as *const sockaddr_in6 as *const sockaddr,
+                        mem::size_of::<sockaddr_in6>() as c_int,
+                        &remote_addr as *const sockaddr_in6 as *const sockaddr,
+                        mem::size_of::<sockaddr_in6>() as c_int,
+                    );
+                }
+                error::wrap_result((), result)
+            }
+            _ => Err(SrtError::SockFail),
+        }
+    }
+    fn connect<A: ToSocketAddrs>(&self, addrs: A) -> Result<()> {
+        let target_addr: SocketAddr;
+        if let Ok(mut target) = addrs.to_socket_addrs() {
+            if let Some(addr) = target.next() {
+                target_addr = addr;
+            } else {
+                return Err(SrtError::SockFail);
+            }
+        } else {
+            return Err(SrtError::SockFail);
+        }
+        println!("connect target {:?}", target_addr);
+        match target_addr {
+            SocketAddr::V4(target) => {
+                let target_addr = create_sockaddr_in(target);
+                println!(
+                    "sockaddr_in {} {} {}",
+                    target_addr.sin_family, target_addr.sin_port, target_addr.sin_addr.s_addr
+                );
+                let result;
+                unsafe {
+                    result = srt::srt_connect(
+                        self.id,
+                        &target_addr as *const sockaddr_in as *const sockaddr,
+                        mem::size_of::<sockaddr_in>() as c_int,
+                    );
+                }
+                println!("Err no {}", result);
+                return error::wrap_result((), result);
+            }
+            SocketAddr::V6(target) => {
+                let id = unsafe { srt::srt_create_socket() };
+                let target_addr = create_sockaddr_in6(target);
+                let result;
+                unsafe {
+                    result = srt::srt_connect(
+                        id,
+                        &target_addr as *const sockaddr_in6 as *const sockaddr,
+                        mem::size_of::<sockaddr_in6>() as c_int,
+                    );
+                }
+                return error::wrap_result((), result);
+            }
+        }
     }
     fn listen(&self, backlog: i32) -> Result<()> {
         let result;
@@ -960,6 +1113,9 @@ impl SrtSocket {
         }
         error::wrap_result((), result)
     }
+}
+
+impl SrtSocket {
     fn set_connection_timeout(&self, msecs: i32) -> Result<()> {
         let result;
         unsafe {
@@ -967,7 +1123,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::ConnTimeO,
                 &msecs as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -979,7 +1135,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::FC,
                 &packets as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -991,7 +1147,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::IpTos,
                 &type_of_service as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1003,7 +1159,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::IpTtl,
                 &hops as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1015,7 +1171,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::Ipv6Only,
                 &value as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1027,7 +1183,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::KmRrefreshRate,
                 &packets as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1039,7 +1195,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::KmPreAnnounce,
                 &packets as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1055,7 +1211,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::Linger,
                 &lin as *const linger as *const c_void,
-                mem::size_of::<linger>() as i32,
+                mem::size_of::<linger>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1067,7 +1223,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::LossMaxTtl,
                 &packets as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1079,7 +1235,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::MaxBW,
                 &bytes_per_sec as *const i64 as *const c_void,
-                mem::size_of::<i64>() as i32,
+                mem::size_of::<i64>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1091,7 +1247,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::MessageApi,
                 &enable as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1103,7 +1259,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::MinVersion,
                 &version as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1115,7 +1271,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::Mss,
                 &bytes as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1127,7 +1283,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::NakReport,
                 &enable as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1163,7 +1319,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::PayloadSize,
                 &bytes as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1175,7 +1331,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::PBKeyLen,
                 &bytes as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1187,7 +1343,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::PeerIdleTimeO,
                 &msecs as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1199,7 +1355,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::PeerLatency,
                 &msecs as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1211,7 +1367,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::RcvBuf,
                 &bytes as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1223,7 +1379,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::RcvLatency,
                 &msecs as *const i32 as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1235,7 +1391,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::RcvSyn,
                 &blocking as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1247,7 +1403,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::Rendezvous,
                 &rendezvous as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1259,7 +1415,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::ReuseAddr,
                 &reuse as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1287,7 +1443,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::SndBuf,
                 &bytes as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1299,7 +1455,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::SndDropDelay,
                 &msecs as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1323,7 +1479,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::EnforcedEncryption,
                 &enforced as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1335,7 +1491,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::TlPktDrop,
                 &enable as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1347,7 +1503,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::TransType,
                 &transmission_type as *const SrtTransmissionType as *const c_void,
-                mem::size_of::<SrtTransmissionType>() as i32,
+                mem::size_of::<SrtTransmissionType>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1359,7 +1515,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::TsbPdMode,
                 &enable as *const bool as *const c_void,
-                mem::size_of::<bool>() as i32,
+                mem::size_of::<bool>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1371,7 +1527,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::UdpSndBuf,
                 &bytes as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1383,7 +1539,7 @@ impl SrtSocket {
                 self.id,
                 srt::SrtSockOpt::UdpRcvBuf,
                 &bytes as *const c_int as *const c_void,
-                mem::size_of::<i32>() as i32,
+                mem::size_of::<i32>() as c_int,
             );
         }
         error::wrap_result((), result)
@@ -1444,4 +1600,64 @@ enum SrtPreConnectOpt {
     TsbPdMode(bool),
     UdpSndBuf(i32),
     UdpRcvBuf(i32),
+}
+
+fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
+    sockaddr_in {
+        sin_family: AF_INET as u16,
+        sin_port: addr.port(),
+        sin_addr: in_addr {
+            s_addr: u32::from_le_bytes(addr.ip().octets()),
+        },
+        sin_zero: [0; 8],
+    }
+}
+
+fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
+    sockaddr_in6 {
+        sin6_family: AF_INET6 as u16,
+        sin6_port: addr.port(),
+        sin6_flowinfo: addr.flowinfo(),
+        sin6_addr: in6_addr {
+            s6_addr: addr.ip().octets(),
+        },
+        sin6_scope_id: addr.scope_id(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate as srt;
+    use srt::SrtBuilder;
+    use std::{net::SocketAddr, sync::mpsc, thread};
+
+    #[test]
+    fn test_listen() {
+        assert!(srt::startup().is_ok());
+        let listen = SrtBuilder::new().listen("127.0.0.1:0", 1);
+        assert!(listen.is_ok());
+        let listen = listen.unwrap();
+        assert!(listen.close().is_ok());
+    }
+
+    #[test]
+    fn test_connect_accept() {
+        assert!(srt::startup().is_ok());
+        let (tx, rx) = mpsc::channel::<SocketAddr>();
+        thread::spawn(move || {
+            let listen = SrtBuilder::new().listen("127.0.0.1:0", 1).unwrap();
+            let local = listen.local_addr();
+            assert!(local.is_ok());
+            tx.send(local.unwrap()).unwrap();
+            let accept = listen.accept();
+            assert!(accept.is_ok());
+            let (peer, _peer_addr) = accept.unwrap();
+            assert!(peer.close().is_ok());
+            assert!(listen.close().is_ok());
+        });
+        let peer_addr = rx.recv().unwrap();
+        let connect = SrtBuilder::new().connect("127.0.0.1:0", peer_addr);
+        assert!(connect.is_ok());
+        assert!(connect.unwrap().close().is_ok());
+    }
 }

@@ -31,4 +31,5 @@ fn main() {
             .output()
             .expect("failed to run cmake");
     }
+    println!("cargo:rustc-link-search=/libsrt");
 }

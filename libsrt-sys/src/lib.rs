@@ -9,11 +9,13 @@ extern "C" {
     pub fn srt_create_socket() -> SRTSOCKET;
     pub fn srt_bind(u: SRTSOCKET, name: *const sockaddr, namelen: c_int) -> c_int;
     pub fn srt_listen(u: SRTSOCKET, backlog: c_int) -> c_int;
-    pub fn srt_connect_bind(
+    pub fn srt_connect(u: SRTSOCKET, name: *const sockaddr, len: c_int) -> c_int;
+    pub fn srt_rendezvous(
         u: SRTSOCKET,
-        source: *const sockaddr,
-        target: *const sockaddr,
-        len: c_int,
+        local_name: *const sockaddr,
+        local_len: c_int,
+        remote_name: *const sockaddr,
+        remote_len: c_int,
     ) -> c_int;
     pub fn srt_close(u: SRTSOCKET) -> c_int;
     pub fn srt_accept(u: SRTSOCKET, addr: *mut sockaddr, addrlen: *mut c_int) -> SRTSOCKET;
