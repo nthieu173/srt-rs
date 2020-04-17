@@ -2,6 +2,7 @@ use std::{
     convert::TryFrom,
     error::Error,
     fmt::{self, Display, Formatter},
+    io::{self, ErrorKind},
 };
 
 #[repr(C)]
@@ -64,6 +65,55 @@ pub fn wrap_result<T>(ok: T, err_no: i32) -> Result<T, SrtError> {
         };
     }
     unreachable!("SRT error code not found");
+}
+
+impl From<SrtError> for io::Error {
+    fn from(e: SrtError) -> Self {
+        io::Error::new(
+            match e {
+                SrtError::Unknown => ErrorKind::Other,
+                SrtError::Success => ErrorKind::Other,
+                SrtError::ConnSetup => ErrorKind::ConnectionRefused,
+                SrtError::NoServer => ErrorKind::ConnectionRefused,
+                SrtError::ConnRej => ErrorKind::ConnectionRefused,
+                SrtError::SockFail => ErrorKind::AddrNotAvailable,
+                SrtError::SecFail => ErrorKind::ConnectionRefused,
+                SrtError::ConnFail => ErrorKind::ConnectionRefused,
+                SrtError::ConnLost => ErrorKind::ConnectionAborted,
+                SrtError::NoConn => ErrorKind::NotConnected,
+                SrtError::Resource => ErrorKind::Other,
+                SrtError::Thread => ErrorKind::Other,
+                SrtError::NoBuf => ErrorKind::Other,
+                SrtError::File => ErrorKind::NotFound,
+                SrtError::InvRdOff => ErrorKind::InvalidInput,
+                SrtError::RdPerm => ErrorKind::PermissionDenied,
+                SrtError::InvWrOff => ErrorKind::InvalidInput,
+                SrtError::WrPerm => ErrorKind::PermissionDenied,
+                SrtError::InvOp => ErrorKind::InvalidInput,
+                SrtError::BoundSock => ErrorKind::AddrInUse,
+                SrtError::ConnSock => ErrorKind::AddrInUse,
+                SrtError::InvParam => ErrorKind::InvalidInput,
+                SrtError::InvSock => ErrorKind::AddrNotAvailable,
+                SrtError::UnboundSock => ErrorKind::NotConnected,
+                SrtError::NoListen => ErrorKind::InvalidInput,
+                SrtError::RdvNoServ => ErrorKind::ConnectionRefused,
+                SrtError::RdvUnbound => ErrorKind::ConnectionRefused,
+                SrtError::InvalMsgApi => ErrorKind::InvalidInput,
+                SrtError::InvalBufferApi => ErrorKind::InvalidInput,
+                SrtError::DupListen => ErrorKind::AddrInUse,
+                SrtError::LargeMsg => ErrorKind::Other,
+                SrtError::InvPollId => ErrorKind::AddrNotAvailable,
+                SrtError::PollEmpty => ErrorKind::Other,
+                SrtError::AsyncFail => ErrorKind::WouldBlock,
+                SrtError::AsyncSnd => ErrorKind::WouldBlock,
+                SrtError::AsyncRcv => ErrorKind::WouldBlock,
+                SrtError::Timeout => ErrorKind::TimedOut,
+                SrtError::Congest => ErrorKind::Other,
+                SrtError::PeerErr => ErrorKind::Other,
+            },
+            e,
+        )
+    }
 }
 
 impl TryFrom<i32> for SrtError {
