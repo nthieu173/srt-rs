@@ -14,7 +14,6 @@ fn main() {
     configure.push("srt-src");
     configure.push("configure");
     let out_dir = env::var("OUT_DIR").unwrap();
-    println!("{}", out_dir);
     env::set_current_dir(&out_dir).expect("failed to set current dir to libsrt");
     Command::new(tcl_shell)
         .arg(configure)

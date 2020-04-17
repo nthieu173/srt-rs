@@ -1031,7 +1031,6 @@ impl SrtSocket {
         }
         match (local_addr, remote_addr) {
             (Some(SocketAddr::V4(local)), Some(SocketAddr::V4(remote))) => {
-                println!("{} {}", local, remote);
                 let local_addr = create_sockaddr_in(local);
                 let remote_addr = create_sockaddr_in(remote);
                 let result;
@@ -1075,14 +1074,9 @@ impl SrtSocket {
         } else {
             return Err(SrtError::SockFail);
         }
-        println!("connect target {:?}", target_addr);
         match target_addr {
             SocketAddr::V4(target) => {
                 let target_addr = create_sockaddr_in(target);
-                println!(
-                    "sockaddr_in {} {} {}",
-                    target_addr.sin_family, target_addr.sin_port, target_addr.sin_addr.s_addr
-                );
                 let result;
                 unsafe {
                     result = srt::srt_connect(
@@ -1091,7 +1085,6 @@ impl SrtSocket {
                         mem::size_of::<sockaddr_in>() as c_int,
                     );
                 }
-                println!("Err no {}", result);
                 return error::wrap_result((), result);
             }
             SocketAddr::V6(target) => {
