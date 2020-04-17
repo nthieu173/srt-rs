@@ -59,122 +59,159 @@ impl SrtBuilder {
 }
 
 impl SrtBuilder {
-    pub fn set_connection_timeout(mut self, msecs: i32) {
+    pub fn set_connection_timeout(mut self, msecs: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::ConnTimeO(msecs));
+        self
     }
-    pub fn set_flight_flag_size(mut self, packets: i32) {
+    pub fn set_flight_flag_size(mut self, packets: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::FC(packets));
+        self
     }
-    pub fn set_ip_type_of_service(mut self, tos: i32) {
+    pub fn set_ip_type_of_service(mut self, tos: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::IpTos(tos));
+        self
     }
-    pub fn set_ipv4_time_to_live(mut self, hops: i32) {
+    pub fn set_ipv4_time_to_live(mut self, hops: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::IpTtl(hops));
+        self
     }
-    pub fn set_ipv6_only(mut self, value: i32) {
+    pub fn set_ipv6_only(mut self, value: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::Ipv6Only(value));
+        self
     }
-    pub fn set_km_refresh_rate(mut self, packets: i32) {
+    pub fn set_km_refresh_rate(mut self, packets: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::KmRefreshRate(packets));
+        self
     }
-    pub fn set_km_preannounce(mut self, packets: i32) {
+    pub fn set_km_preannounce(mut self, packets: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::KmPreAnnounce(packets));
+        self
     }
-    pub fn set_linger(mut self, secs: i32) {
+    pub fn set_linger(mut self, secs: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::Linger(secs));
+        self
     }
-    pub fn set_max_reorder_tolerance(mut self, packets: i32) {
+    pub fn set_max_reorder_tolerance(mut self, packets: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::LossMaxTtl(packets));
+        self
     }
-    pub fn set_max_bandwith(mut self, bytes_per_sec: i64) {
+    pub fn set_max_bandwith(mut self, bytes_per_sec: i64) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::MaxBW(bytes_per_sec));
+        self
     }
-    pub fn set_message_api(mut self, enable: bool) {
+    pub fn set_message_api(mut self, enable: bool) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::MessageApi(enable));
+        self
     }
-    pub fn set_min_version(mut self, version: i32) {
+    pub fn set_min_version(mut self, version: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::MinVersion(version));
+        self
     }
-    pub fn set_mss(mut self, bytes: i32) {
+    pub fn set_mss(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::Mss(bytes));
+        self
     }
-    pub fn set_nak_report(mut self, enable: bool) {
+    pub fn set_nak_report(mut self, enable: bool) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::NakReport(enable));
+        self
     }
-    pub fn set_packet_filter(mut self, filter: String) {
+    pub fn set_packet_filter(mut self, filter: String) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::PacketFilter(filter));
+        self
     }
-    pub fn set_passphrase(mut self, passphrase: String) {
+    pub fn set_passphrase(mut self, passphrase: String) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::Passphrase(passphrase));
+        self
     }
-    pub fn set_payload_size(mut self, bytes: i32) {
+    pub fn set_payload_size(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::PayloadSize(bytes));
+        self
     }
-    pub fn set_encryption_key_length(mut self, bytes: i32) {
+    pub fn set_encryption_key_length(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::PBKeyLen(bytes));
+        self
     }
-    pub fn set_peer_idle_timeout(mut self, msecs: i32) {
+    pub fn set_peer_idle_timeout(mut self, msecs: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::PeerIdleTimeO(msecs));
+        self
     }
-    pub fn set_peer_latency(mut self, msecs: i32) {
+    pub fn set_peer_latency(mut self, msecs: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::PeerLatency(msecs));
+        self
     }
-    pub fn set_receive_buffer(mut self, bytes: i32) {
+    pub fn set_receive_buffer(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::RcvBuf(bytes));
+        self
     }
-    pub fn set_receive_latency(mut self, msecs: i32) {
+    pub fn set_receive_latency(mut self, msecs: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::RcvLatency(msecs));
+        self
     }
-    pub fn set_receive_blocking(mut self, blocking: bool) {
+    pub fn set_receive_blocking(mut self, blocking: bool) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::RcvSyn(blocking));
+        self
     }
-    pub fn set_rendezvous(mut self, rendezvous: bool) {
+    pub fn set_rendezvous(mut self, rendezvous: bool) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::Rendezvous(rendezvous));
+        self
     }
-    pub fn set_reuse_address(mut self, reuse_address: bool) {
+    pub fn set_reuse_address(mut self, reuse_address: bool) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::ReuseAddr(reuse_address));
+        self
     }
-    pub fn set_live_congestion_controller(mut self) {
+    pub fn set_live_congestion_controller(mut self) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::Congestion(SrtCongestionController::Live));
+        self
     }
-    pub fn set_file_congestion_controller(mut self) {
+    pub fn set_file_congestion_controller(mut self) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::Congestion(SrtCongestionController::File));
+        self
     }
-    pub fn set_send_buffer(mut self, bytes: i32) {
+    pub fn set_send_buffer(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::SndBuf(bytes));
+        self
     }
-    pub fn set_send_drop_delay(mut self, msecs: i32) {
+    pub fn set_send_drop_delay(mut self, msecs: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::SndDropDelay(msecs));
+        self
     }
-    pub fn set_stream_id(mut self, id: String) {
+    pub fn set_stream_id(mut self, id: String) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::StreamId(id));
+        self
     }
-    pub fn set_enforced_encryption(mut self, enforced: bool) {
+    pub fn set_enforced_encryption(mut self, enforced: bool) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::EnforcedEncryption(enforced));
+        self
     }
-    pub fn set_too_late_packet_drop(mut self, enable: bool) {
+    pub fn set_too_late_packet_drop(mut self, enable: bool) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::TlPktDrop(enable));
+        self
     }
-    pub fn set_live_transmission_type(mut self) {
+    pub fn set_live_transmission_type(mut self) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::TransType(SrtTransmissionType::Live));
+        self
     }
-    pub fn set_file_transmission_type(mut self) {
+    pub fn set_file_transmission_type(mut self) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::TransType(SrtTransmissionType::File));
+        self
     }
-    pub fn set_timestamp_based_packet_delivery_mode(mut self, enable: bool) {
+    pub fn set_timestamp_based_packet_delivery_mode(mut self, enable: bool) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::TsbPdMode(enable));
+        self
     }
-    pub fn set_udp_send_buffer(mut self, bytes: i32) {
+    pub fn set_udp_send_buffer(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::UdpSndBuf(bytes));
+        self
     }
-    pub fn set_udp_receive_buffer(mut self, bytes: i32) {
+    pub fn set_udp_receive_buffer(mut self, bytes: i32) -> Self {
         self.opt_vec.push(SrtPreConnectOpt::UdpRcvBuf(bytes));
+        self
     }
     fn config_socket(self, socket: &SrtSocket) -> Result<()> {
         for opt in self.opt_vec {
