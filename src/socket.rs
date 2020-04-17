@@ -32,12 +32,14 @@ impl SrtBuilder {
         local: A,
         remote: B,
     ) -> Result<SrtSocket> {
+        startup()?;
         let socket = SrtSocket::bind(local)?;
         self.config_socket(&socket)?;
         socket.connect(remote)?;
         Ok(socket)
     }
     pub fn listen<A: ToSocketAddrs>(self, addr: A, backlog: i32) -> Result<SrtSocket> {
+        startup()?;
         let socket = SrtSocket::bind(addr)?;
         self.config_socket(&socket)?;
         socket.listen(backlog)?;
@@ -48,6 +50,7 @@ impl SrtBuilder {
         local: A,
         remote: B,
     ) -> Result<SrtSocket> {
+        startup()?;
         let socket = SrtSocket::new();
         self.config_socket(&socket)?;
         socket.rendezvous(local, remote)?;
@@ -1625,6 +1628,26 @@ fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
     }
 }
 
+use libc;
+use std::sync::Once;
+
+static STARTUP: Once = Once::new();
+
+fn startup() -> Result<()> {
+    let mut result = 0;
+    STARTUP.call_once(|| unsafe {
+        result = srt::srt_startup();
+        libc::atexit(cleanup);
+    });
+    error::wrap_result((), result)
+}
+
+extern "C" fn cleanup() {
+    unsafe {
+        srt::srt_cleanup();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate as srt;
@@ -1633,7 +1656,6 @@ mod tests {
 
     #[test]
     fn test_listen() {
-        assert!(srt::startup().is_ok());
         let listen = SrtBuilder::new().listen("127.0.0.1:0", 1);
         assert!(listen.is_ok());
         let listen = listen.unwrap();
@@ -1642,7 +1664,6 @@ mod tests {
 
     #[test]
     fn test_connect_accept() {
-        assert!(srt::startup().is_ok());
         let (tx, rx) = mpsc::channel::<SocketAddr>();
         thread::spawn(move || {
             let listen = SrtBuilder::new().listen("127.0.0.1:0", 1).unwrap();
