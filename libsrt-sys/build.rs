@@ -5,7 +5,7 @@ fn main() {
     let build_dir = env::current_dir().unwrap();
     let mut tcl_shell = build_dir.clone();
     tcl_shell.push("tclkit");
-    if cfg!(target_os = "windows") {
+    if cfg!(windows) {
         tcl_shell.push("tclkit-8.6.3-win32-ix86.exe");
     } else {
         tcl_shell.push("tclkit-8.6.3-rhel5-ix86");
@@ -21,7 +21,7 @@ fn main() {
         .arg(".")
         .output()
         .expect("failed to run configure");
-    if cfg!(target_os = "windows") {
+    if cfg!(windows) {
         Command::new("cmd")
             .arg("make install")
             .output()
