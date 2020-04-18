@@ -1,9 +1,14 @@
+#[cfg(target_os = "linux")]
 use libc::sockaddr;
+
+#[cfg(target_os = "windows")]
+use winapi::shared::ws2def::SOCKADDR as sockaddr;
 
 use std::{
     ffi::c_void,
     os::raw::{c_char, c_int},
 };
+
 type SRTSOCKET = c_int;
 
 #[link(name = "srt")]
