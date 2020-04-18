@@ -9,7 +9,7 @@ use winapi::{
         in6addr::in6_addr,
         inaddr::in_addr,
         ws2def::{AF_INET, AF_INET6, SOCKADDR_IN as sockaddr_in},
-        ws2ipdef::SOCKADDR_IN6_LH as sockaddr_in6,
+        ws2ipdef::{SOCKADDR_IN6_LH as sockaddr_in6, SOCKADDR_IN6_LH_u},
     },
     um::winsock2::linger,
 };
@@ -293,11 +293,19 @@ pub struct SrtSocket {
     id: i32,
 }
 
+#[cfg(target_os = "linux")]
 fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
     let ip = addr.sin_addr.s_addr.to_le_bytes();
     SocketAddrV4::new(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3]), addr.sin_port)
 }
 
+#[cfg(target_os = "windows")]
+fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
+    let ip = unsafe { addr.sin_addr.S_un.S_un_b() };
+    SocketAddrV4::new(Ipv4Addr::new(ip.s_b1, ip.s_b2, ip.s_b3, ip.s_b4), addr.sin_port)
+}
+
+#[cfg(target_os = "linux")]
 fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
     let ip = addr.sin6_addr.s6_addr;
     SocketAddrV6::new(
@@ -317,19 +325,33 @@ fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
     )
 }
 
+#[cfg(target_os = "windows")]
+fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
+    let ip = unsafe {addr.sin6_addr.u.Word() };
+    SocketAddrV6::new(
+        Ipv6Addr::new(
+            ip[0],
+            ip[1],
+            ip[2],
+            ip[3],
+            ip[4],
+            ip[5],
+            ip[6],
+            ip[7]
+        ),
+        addr.sin6_port,
+        addr.sin6_flowinfo,
+        unsafe { *addr.u.sin6_scope_id() },
+    )
+}
+
 //Public operational methods
 impl SrtSocket {
     pub fn local_addr(&self) -> Result<SocketAddr> {
         let local_addr: SocketAddr;
         let result;
         unsafe {
-            let mut addr = sockaddr_in6 {
-                sin6_family: 0,
-                sin6_port: 0,
-                sin6_flowinfo: 0,
-                sin6_addr: in6_addr { s6_addr: [0; 16] },
-                sin6_scope_id: 0,
-            };
+            let mut addr = mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>([0; mem::size_of::<sockaddr_in6>()]);
             let mut addrlen: c_int = 0;
             result = srt::srt_getsockname(
                 self.id,
@@ -338,8 +360,7 @@ impl SrtSocket {
             );
             local_addr = match addr.sin6_family as i32 {
                 AF_INET => {
-                    let addr = *(&addr as *const sockaddr_in6 as *const sockaddr_in);
-                    SocketAddr::V4(create_socket_addr_v4(addr))
+                    SocketAddr::V4(create_socket_addr_v4(mem::transmute_copy(&addr)))
                 }
                 AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
                 _ => unreachable!("libsrt returned a socket with an unrecognized family"),
@@ -351,13 +372,7 @@ impl SrtSocket {
         let peer_addr: SocketAddr;
         let result;
         unsafe {
-            let mut addr = sockaddr_in6 {
-                sin6_family: 0,
-                sin6_port: 0,
-                sin6_flowinfo: 0,
-                sin6_addr: in6_addr { s6_addr: [0; 16] },
-                sin6_scope_id: 0,
-            };
+            let mut addr = mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>([0; mem::size_of::<sockaddr_in6>()]);
             let mut addrlen: c_int = 0;
             result = srt::srt_getpeername(
                 self.id,
@@ -366,8 +381,7 @@ impl SrtSocket {
             );
             peer_addr = match addr.sin6_family as i32 {
                 AF_INET => {
-                    let addr = *(&addr as *const sockaddr_in6 as *const sockaddr_in);
-                    SocketAddr::V4(create_socket_addr_v4(addr))
+                    SocketAddr::V4(create_socket_addr_v4(mem::transmute_copy(&addr)))
                 }
                 AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
                 _ => unreachable!("libsrt returned a socket with an unrecognized family"),
@@ -379,13 +393,7 @@ impl SrtSocket {
         let peer_id;
         let peer_addr: SocketAddr;
         unsafe {
-            let mut addr = sockaddr_in6 {
-                sin6_family: 0,
-                sin6_port: 0,
-                sin6_flowinfo: 0,
-                sin6_addr: in6_addr { s6_addr: [0; 16] },
-                sin6_scope_id: 0,
-            };
+            let mut addr = mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>([0; mem::size_of::<sockaddr_in6>()]);
             let mut _addrlen: c_int = 0;
             peer_id = srt::srt_accept(
                 self.id,
@@ -394,8 +402,7 @@ impl SrtSocket {
             );
             peer_addr = match addr.sin6_family as i32 {
                 AF_INET => {
-                    let addr = *(&addr as *const sockaddr_in6 as *const sockaddr_in);
-                    SocketAddr::V4(create_socket_addr_v4(addr))
+                    SocketAddr::V4(create_socket_addr_v4(mem::transmute_copy(&addr)))
                 }
                 AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
                 f => unreachable!("libsrt returned a socket with an unrecognized family {}", f),
@@ -554,7 +561,7 @@ impl SrtSocket {
                 &mut _optlen as *mut c_int,
             );
         }
-        error::wrap_result(linger.l_linger, result)
+        error::wrap_result(linger.l_linger as i32, result)
     }
     pub fn get_max_reorder_tolerance(&self) -> Result<i32> {
         let mut packets = 0;
@@ -1247,10 +1254,28 @@ impl SrtSocket {
         }
         error::wrap_result((), result)
     }
+    #[cfg(target_os = "linux")]
     fn set_linger(&self, secs: i32) -> Result<()> {
         let lin = linger {
             l_onoff: (secs > 0) as i32,
             l_linger: secs,
+        };
+        let result;
+        unsafe {
+            result = srt::srt_setsockflag(
+                self.id,
+                srt::SrtSockOpt::Linger,
+                &lin as *const linger as *const c_void,
+                mem::size_of::<linger>() as c_int,
+            );
+        }
+        error::wrap_result((), result)
+    }
+    #[cfg(target_os = "windows")]
+    fn set_linger(&self, secs: i32) -> Result<()> {
+        let lin = linger {
+            l_onoff: (secs > 0) as u16,
+            l_linger: secs as u16,
         };
         let result;
         unsafe {
@@ -1649,6 +1674,7 @@ enum SrtPreConnectOpt {
     UdpRcvBuf(i32),
 }
 
+#[cfg(target_os = "linux")]
 fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
     sockaddr_in {
         sin_family: AF_INET as u16,
@@ -1660,6 +1686,24 @@ fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
+    let mut sin_addr = unsafe { mem::zeroed::<in_addr>() };
+    let mut sin_ip = unsafe { sin_addr.S_un.S_un_b_mut() };
+    let ip = addr.ip().octets();
+    sin_ip.s_b1 = ip[0];
+    sin_ip.s_b2 = ip[1];
+    sin_ip.s_b3 = ip[2];
+    sin_ip.s_b4 = ip[3];
+    sockaddr_in {
+        sin_family: AF_INET as u16,
+        sin_port: addr.port(),
+        sin_addr,
+        sin_zero: [0; 8],
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
     sockaddr_in6 {
         sin6_family: AF_INET6 as u16,
@@ -1671,6 +1715,24 @@ fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
         sin6_scope_id: addr.scope_id(),
     }
 }
+
+#[cfg(target_os = "windows")]
+fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
+    let mut sin6_addr = unsafe { mem::zeroed::<in6_addr>() };
+    let sin_ip = unsafe { sin6_addr.u.Byte_mut() };
+    *sin_ip = addr.ip().octets();
+    let mut u = unsafe { mem::zeroed::<SOCKADDR_IN6_LH_u>() };
+    let scope_id = unsafe { u.sin6_scope_id_mut() };
+    *scope_id = addr.scope_id();
+    sockaddr_in6 {
+        sin6_family: AF_INET6 as u16,
+        sin6_port: addr.port(),
+        sin6_flowinfo: addr.flowinfo(),
+        sin6_addr,
+        u
+    }
+}
+
 
 static STARTUP: Once = Once::new();
 
