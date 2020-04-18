@@ -1,15 +1,24 @@
-use libc::{
-    c_char, c_int, c_void, in6_addr, in_addr, linger, sockaddr, sockaddr_in, sockaddr_in6, AF_INET,
-    AF_INET6,
+#[cfg(target_os = "linux")]
+use libc::{in6_addr, in_addr, linger, sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6};
+
+#[cfg(target_os = "windows")]
+use winapi::shared::{
+    in6addr::in6_addr,
+    in_addr::in_addr,
+    um::winsock2::linger,
+    ws2def::{AF_INET, AF_INET6, SOCKADDR as sockaddr, SOCKADDR_IN as sockaddr_in},
+    ws2ipdef::SOCKADDR_IN6_LH as sockaddr_in6,
 };
 
 use libsrt_sys as srt;
 
 use std::{
+    ffi::c_void,
     io::{self, Read, Write},
     iter::FromIterator,
     mem,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
+    os::raw::{c_char, c_int},
     result,
 };
 
