@@ -12,6 +12,9 @@ readme = "README.md"
 
 [dependencies]
 libsrt-sys = { path = "libsrt-sys", version = "1.4.1" }
+lazy_static = "1.4"
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
