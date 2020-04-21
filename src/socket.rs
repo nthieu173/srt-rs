@@ -1,7 +1,7 @@
 use libc::sockaddr;
 
 #[cfg(target_os = "linux")]
-use libc::{in6_addr, in_addr, linger, sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6};
+use libc::{in6_addr, in_addr, linger, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6};
 
 #[cfg(target_os = "windows")]
 use winapi::{
