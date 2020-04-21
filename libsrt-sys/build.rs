@@ -3,28 +3,28 @@ use std::{env, error::Error, process::Command, path::PathBuf};
 #[cfg(windows)]
 use std::{path::Path, fs::{self, DirEntry}};
 
+#[cfg(windows)]
 const MIN_VS_VERSION: u32 = 2017;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let build_dir = env::current_dir()?;
-    let mut configure = build_dir.clone();
+    let mut configure = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not found"));
     configure.push("srt-src");
     configure.push("configure");
-    let mut out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    env::set_current_dir(&out_dir).expect("failed to set current dir to libsrt");
+    let out_dir = env::var("OUT_DIR")?;
+    env::set_current_dir(&out_dir).expect("failed to set current dir to out_dir");
     if cfg!(windows) {
-        make_install(build_dir, configure)
+        make_install(configure);
+        println!("cargo:rustc-link-search={}\\Release", out_dir);
     } else {
-        make_install(build_dir, configure);
+        make_install(configure);
+        println!("cargo:rustc-link-search={}", out_dir);
     }
-    out_dir.push("lib");
-    println!("cargo:rustc-link-search={}", out_dir.as_os_str().to_str().expect("malformed OUT_DIR"));
     Ok(())
 }
 
 #[cfg(windows)]
-fn make_install(build_dir: PathBuf, configure: PathBuf) {
-    let mut tcl_shell = build_dir;
+fn make_install(configure: PathBuf) {
+    let mut tcl_shell = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not found"));
     tcl_shell.push("tclkit");
     tcl_shell.push("tclkit-cli-8_6_10-twapi-4_3_8-x64-max.exe");
     let mut configure_command = Command::new(tcl_shell);
@@ -87,7 +87,7 @@ fn make_install(build_dir: PathBuf, configure: PathBuf) {
                 if out.contains("[vcvarsall.bat] Environment initialized for: 'x64'") {
                     Command::new("cmd")
                         .arg("/c").arg(command_file)
-                        .args(&["&&","cmake","--build",".","--target","install"])
+                        .args(&["&&","cmake","--build",".","--config","Release","--target","install"])
                         .output()
                         .expect("failed to run cmake");
                     return;
@@ -99,7 +99,7 @@ fn make_install(build_dir: PathBuf, configure: PathBuf) {
 }
 
 #[cfg(unix)]
-fn make_install(_build_dir: PathBuf, configure: PathBuf) {
+fn make_install(configure: PathBuf) {
     let output = Command::new("tclsh")
         .arg(configure)
         .arg("--enable-apps=OFF")
