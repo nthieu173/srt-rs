@@ -1,3 +1,5 @@
+use libc::sockaddr;
+
 #[cfg(target_os = "linux")]
 use libc::{in6_addr, in_addr, linger, sockaddr, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6};
 
@@ -6,7 +8,7 @@ use winapi::{
     shared::{
         in6addr::in6_addr,
         inaddr::in_addr,
-        ws2def::{AF_INET, AF_INET6, SOCKADDR as sockaddr, SOCKADDR_IN as sockaddr_in},
+        ws2def::{AF_INET, AF_INET6, SOCKADDR_IN as sockaddr_in},
         ws2ipdef::{SOCKADDR_IN6_LH_u, SOCKADDR_IN6_LH as sockaddr_in6},
     },
     um::winsock2::linger,
