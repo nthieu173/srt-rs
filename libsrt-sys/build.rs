@@ -1,13 +1,17 @@
-use std::{env, error::Error, process::Command, path::PathBuf};
+use std::{env, error::Error, path::PathBuf, process::Command};
 
 #[cfg(windows)]
-use std::{path::Path, fs::{self, DirEntry}};
+use std::{
+    fs::{self, DirEntry},
+    path::Path,
+};
 
 #[cfg(windows)]
 const MIN_VS_VERSION: u32 = 2017;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut configure = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not found"));
+    let mut configure =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not found"));
     configure.push("srt-src");
     configure.push("configure");
     let out_dir = env::var("OUT_DIR")?;
@@ -24,7 +28,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(windows)]
 fn make_install(configure: PathBuf) {
-    let mut tcl_shell = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not found"));
+    let mut tcl_shell =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not found"));
     tcl_shell.push("tclkit");
     tcl_shell.push("tclkit-cli-8_6_10-twapi-4_3_8-x64-max.exe");
     let mut configure_command = Command::new(tcl_shell);
@@ -39,23 +44,33 @@ fn make_install(configure: PathBuf) {
     if let Ok(openssl_include_dir) = env::var("OPENSSL_INCLUDE_DIR") {
         configure_command.arg(format!("--openssl-include-dir={}", openssl_include_dir));
     }
-    let output = configure_command.output().expect("failed to configure");
-    if !String::from_utf8(output.stdout).expect("malformed configure output")
-        .contains("Build files have been written to") {
+    let output = String::from_utf8(
+        configure_command
+            .output()
+            .expect("failed to configure")
+            .stdout,
+    )
+    .expect("malformed configure output");
+    if !output.contains("Build files have been written to") {
+        println!("{}", output);
         panic!("failed to generate build files");
     }
-    let mut visual_studios: Vec<DirEntry> = fs::read_dir(Path::new("C:\\Program Files (x86)\\Microsoft Visual Studio"))
-        .expect("fail to read Visual Studio dir")
-        .filter(|f| f.is_ok()).map(|f| f.unwrap())
-        .filter(|f| f.file_type().is_ok() && f.file_type().unwrap().is_dir())
-        .filter(|f| {
-            if let Ok(name) = f.file_name().into_string() {
-                if let Ok(version) = name.parse::<u32>() {
-                    return version >= MIN_VS_VERSION;
-                }
+    let mut visual_studios: Vec<DirEntry> = fs::read_dir(Path::new(
+        "C:\\Program Files (x86)\\Microsoft Visual Studio",
+    ))
+    .expect("fail to read Visual Studio dir")
+    .filter(|f| f.is_ok())
+    .map(|f| f.unwrap())
+    .filter(|f| f.file_type().is_ok() && f.file_type().unwrap().is_dir())
+    .filter(|f| {
+        if let Ok(name) = f.file_name().into_string() {
+            if let Ok(version) = name.parse::<u32>() {
+                return version >= MIN_VS_VERSION;
             }
-            false
-        }).collect();
+        }
+        false
+    })
+    .collect();
     if visual_studios.len() == 0 {
         panic!("Only Visual Studio {} and up is supported", 2017);
     }
@@ -63,22 +78,26 @@ fn make_install(configure: PathBuf) {
     visual_studios.reverse();
     let mut command_files = Vec::new();
     for entry in visual_studios {
-        let mut bat = fs::read_dir(entry.path()).expect("fail to read Visual Studio dir")
-            .filter(|f| f.is_ok()).map(|f| f.unwrap())
+        let mut bat = fs::read_dir(entry.path())
+            .expect("fail to read Visual Studio dir")
+            .filter(|f| f.is_ok())
+            .map(|f| f.unwrap())
             .filter(|f| f.file_type().is_ok() && f.file_type().unwrap().is_dir())
             .filter(|f| {
                 if let Ok(name) = f.file_name().into_string() {
                     return ["Community", "Professional", "Enterprise"].contains(&name.as_str());
                 }
                 false
-            }).map(|f| {
+            })
+            .map(|f| {
                 let mut p = f.path();
                 p.push("VC");
                 p.push("Auxiliary");
                 p.push("Build");
                 p.push("vcvars64.bat");
                 p
-            }).collect();
+            })
+            .collect();
         command_files.append(&mut bat);
     }
     for command_file in command_files.iter().filter(|p| p.exists()) {
@@ -86,8 +105,12 @@ fn make_install(configure: PathBuf) {
             if let Ok(out) = String::from_utf8(output.stdout) {
                 if out.contains("[vcvarsall.bat] Environment initialized for: 'x64'") {
                     Command::new("cmd")
-                        .arg("/c").arg(command_file)
-                        .args(&["&&","cmake","--build",".","--config","Release","--target","install"])
+                        .arg("/c")
+                        .arg(command_file)
+                        .args(&[
+                            "&&", "cmake", "--build", ".", "--config", "Release", "--target",
+                            "install",
+                        ])
                         .output()
                         .expect("failed to run cmake");
                     return;
@@ -106,8 +129,10 @@ fn make_install(configure: PathBuf) {
         .arg("--prefix=.")
         .output()
         .expect("failed to run configure in tclsh");
-    if !String::from_utf8(output.stdout).expect("malformed configure output")
-        .contains("Build files have been written to") {
+    if !String::from_utf8(output.stdout)
+        .expect("malformed configure output")
+        .contains("Build files have been written to")
+    {
         panic!("failed to generate build files");
     }
     Command::new("sh")
