@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     env::set_current_dir(&out_dir).expect("failed to set current dir to out_dir");
     if cfg!(windows) {
         make_install(configure);
-        println!("cargo:rustc-link-search={}\\lib", out_dir);
+        println!("cargo:rustc-link-search={}\\Release", out_dir);
     } else {
         make_install(configure);
         println!("cargo:rustc-link-search={}", out_dir);
