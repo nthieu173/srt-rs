@@ -24,8 +24,8 @@ extern "C" {
     ) -> c_int;
     pub fn srt_close(u: SRTSOCKET) -> c_int;
     pub fn srt_accept(u: SRTSOCKET, addr: *mut sockaddr, addrlen: *mut c_int) -> SRTSOCKET;
-    pub fn srt_getpeername(u: SRTSOCKET, name: *mut sockaddr, namelen: *mut c_int) -> c_int;
-    pub fn srt_getsockname(u: SRTSOCKET, name: *mut sockaddr, namelen: *mut c_int) -> c_int;
+    pub fn srt_getpeername(u: SRTSOCKET, name: *mut sockaddr, namelen: *mut c_int) -> c_void;
+    pub fn srt_getsockname(u: SRTSOCKET, name: *mut sockaddr, namelen: *mut c_int) -> c_void;
     pub fn srt_getsockflag(
         u: SRTSOCKET,
         opt: SrtSockOpt,

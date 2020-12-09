@@ -64,7 +64,7 @@ pub fn wrap_result<T>(ok: T, err_no: i32) -> Result<T, SrtError> {
             e => Err(e),
         };
     }
-    unreachable!("SRT error code not found");
+    unreachable!(format!("SRT error code not found: {}", err_no));
 }
 
 impl From<SrtError> for io::Error {
