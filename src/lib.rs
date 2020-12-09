@@ -430,7 +430,7 @@ impl SrtSocket {
         let mut msecs = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::ConnTimeO,
@@ -444,7 +444,7 @@ impl SrtSocket {
         let mut packets = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::FC,
@@ -458,7 +458,7 @@ impl SrtSocket {
         let mut bytes_per_sec = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::InputBW,
@@ -472,7 +472,7 @@ impl SrtSocket {
         let mut tos = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::IpTos,
@@ -486,7 +486,7 @@ impl SrtSocket {
         let mut sequences = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::ISN,
@@ -500,7 +500,7 @@ impl SrtSocket {
         let mut hops = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::IpTtl,
@@ -514,7 +514,7 @@ impl SrtSocket {
         let mut value = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::Ipv6Only,
@@ -528,7 +528,7 @@ impl SrtSocket {
         let mut packets = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::KmRrefreshRate,
@@ -542,7 +542,7 @@ impl SrtSocket {
         let mut packets = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::KmPreAnnounce,
@@ -559,7 +559,7 @@ impl SrtSocket {
         };
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::Linger,
@@ -573,7 +573,7 @@ impl SrtSocket {
         let mut packets = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::LossMaxTtl,
@@ -587,7 +587,7 @@ impl SrtSocket {
         let mut bytes_per_sec = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::MaxBW,
@@ -601,7 +601,7 @@ impl SrtSocket {
         let mut bytes = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::Mss,
@@ -615,7 +615,7 @@ impl SrtSocket {
         let mut enabled = true;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::NakReport,
@@ -629,7 +629,7 @@ impl SrtSocket {
         let mut len = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::PBKeyLen,
@@ -643,7 +643,7 @@ impl SrtSocket {
         let mut msecs = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::PeerLatency,
@@ -657,7 +657,7 @@ impl SrtSocket {
         let mut version = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::PeerVersion,
@@ -671,7 +671,7 @@ impl SrtSocket {
         let mut bytes = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::RcvBuf,
@@ -685,7 +685,7 @@ impl SrtSocket {
         let mut packets = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::RcvData,
@@ -699,7 +699,7 @@ impl SrtSocket {
         let mut state = SrtKmState::Unsecured;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::RcvKmState,
@@ -713,7 +713,7 @@ impl SrtSocket {
         let mut msecs = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::RcvLatency,
@@ -727,7 +727,7 @@ impl SrtSocket {
         let mut blocking = true;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::RcvSyn,
@@ -741,7 +741,7 @@ impl SrtSocket {
         let mut msecs = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::RcvTimeO,
@@ -755,7 +755,7 @@ impl SrtSocket {
         let mut rendezvous = false;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::Rendezvous,
@@ -769,7 +769,7 @@ impl SrtSocket {
         let mut rendezvous = false;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::ReuseAddr,
@@ -783,7 +783,7 @@ impl SrtSocket {
         let mut bytes = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::SndBuf,
@@ -797,7 +797,7 @@ impl SrtSocket {
         let mut packets = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::SndData,
@@ -811,7 +811,7 @@ impl SrtSocket {
         let mut state = SrtKmState::Unsecured;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::SndKmState,
@@ -825,7 +825,7 @@ impl SrtSocket {
         let mut blocking = true;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::SndSyn,
@@ -839,7 +839,7 @@ impl SrtSocket {
         let mut secs = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::SndTimeO,
@@ -853,7 +853,7 @@ impl SrtSocket {
         let mut state = SrtSocketStatus::Init;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::State,
@@ -865,7 +865,7 @@ impl SrtSocket {
     }
     pub fn get_stream_id(&self) -> Result<String> {
         let mut id = String::from_iter([' '; 512].iter());
-        let mut id_len: i32 = 0;
+        let mut id_len = mem::size_of_val(&id) as i32;
         let result;
         unsafe {
             result = srt::srt_getsockflag(
@@ -882,7 +882,7 @@ impl SrtSocket {
         let mut enable = true;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::TlPktDrop,
@@ -896,7 +896,7 @@ impl SrtSocket {
         let mut enable = true;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::TsbPdMode,
@@ -910,7 +910,7 @@ impl SrtSocket {
         let mut bytes = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::UdpRcvBuf,
@@ -924,7 +924,7 @@ impl SrtSocket {
         let mut bytes = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::UdpSndBuf,
@@ -938,7 +938,7 @@ impl SrtSocket {
         let mut version = 0;
         let result;
         unsafe {
-            let mut _optlen = 0;
+            let mut _optlen = mem::size_of::<i32>() as i32;
             result = srt::srt_getsockflag(
                 self.id,
                 srt::SrtSockOpt::Version,
@@ -1743,7 +1743,7 @@ fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
 mod tests {
     use crate as srt;
     use srt::SrtBuilder;
-    use std::{net::SocketAddr, sync::mpsc, thread};
+    use std::{sync::mpsc, thread};
 
     #[test]
     fn test_connect_accept() {
