@@ -1,3 +1,3 @@
-[submodule "libsrt-sys/srt-src"]
-	path = libsrt-sys/srt-src
+[submodule "libsrt-sys/libsrt"]
+	path = libsrt-sys/libsrt
 	url = https://github.com/Haivision/srt.git
