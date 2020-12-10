@@ -15,12 +15,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if cfg!(windows) {
         let dst = cmake::Config::new("libsrt")
             .generator("Visual Studio 16 2019")
+            .cxxflag("/EHs")
             .define("ENABLE_STDCXX_SYNC", "ON")
             .define("ENABLE_APPS", "OFF")
             .build();
-        let mut lib_dir = PathBuf::from(dst);
+        let mut lib_dir = PathBuf::from(dst.clone());
         lib_dir.push("lib");
+        let mut bin_dir = PathBuf::from(dst);
+        bin_dir.push("bin");
         println!("cargo:rustc-link-search={}", lib_dir.display());
+        println!("cargo:rustc-link-search={}", bin_dir.display());
         println!("cargo:rustc-link-lib=srt");
     }
 
@@ -38,10 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The input header we would like to generate
         // bindings for.
         .header("wrapper.h")
-        .clang_arg(format!(
-            "-I/{}",
-            include_path.as_os_str().to_str().expect("malformed path")
-        ))
+        .clang_arg(format!("--include-directory={}", include_path.display()))
         .size_t_is_usize(true)
         .whitelist_function("srt_.*")
         .whitelist_type("SRT.*")
