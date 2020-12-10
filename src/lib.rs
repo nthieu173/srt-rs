@@ -1,7 +1,7 @@
 pub mod error;
 use error::SrtError;
-use libc::sockaddr;
 use libsrt_sys as srt;
+use srt::sockaddr;
 
 #[cfg(target_os = "linux")]
 use libc::{in6_addr, in_addr, linger, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6};
@@ -29,19 +29,13 @@ use std::{
 type Result<T> = std::result::Result<T, SrtError>;
 
 pub fn startup() -> Result<()> {
-    let mut result = unsafe { srt::srt_startup() };
-    if result != 0 {
-        result = -1;
-    }
-    error::wrap_result((), result)
+    let result = unsafe { srt::srt_startup() };
+    error::handle_result((), result)
 }
 
 pub fn cleanup() -> Result<()> {
-    let mut result = unsafe { srt::srt_cleanup() };
-    if result != 0 {
-        result = -1;
-    }
-    error::wrap_result((), result)
+    let result = unsafe { srt::srt_cleanup() };
+    error::handle_result((), result)
 }
 
 pub struct SrtBuilder {
@@ -59,14 +53,16 @@ impl SrtBuilder {
         local: A,
         remote: B,
     ) -> Result<SrtSocket> {
-        let socket = SrtSocket::bind(local)?;
+        let socket = SrtSocket::new();
         self.config_socket(&socket)?;
+        let socket = socket.bind(local)?;
         socket.connect(remote)?;
         Ok(socket)
     }
     pub fn listen<A: ToSocketAddrs>(self, addr: A, backlog: i32) -> Result<SrtSocket> {
-        let socket = SrtSocket::bind(addr)?;
+        let socket = SrtSocket::new();
         self.config_socket(&socket)?;
+        let socket = socket.bind(addr)?;
         socket.listen(backlog)?;
         Ok(socket)
     }
@@ -285,9 +281,8 @@ impl SrtBuilder {
     }
 }
 
-#[repr(C)]
 pub enum SrtSocketStatus {
-    Init = 1,
+    Init,
     Opened,
     Listening,
     Connecting,
@@ -371,7 +366,7 @@ impl SrtSocket {
             AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
             _ => unreachable!("libsrt returned a socket with an unrecognized family"),
         };
-        error::wrap_result(local_addr, 0)
+        error::handle_result(local_addr, 0)
     }
     pub fn peer_addr(&self) -> Result<SocketAddr> {
         let peer_addr: SocketAddr;
@@ -381,7 +376,7 @@ impl SrtSocket {
             )
         };
         let mut addrlen: c_int = mem::size_of::<sockaddr_in6>() as i32;
-        unsafe {
+        let result = unsafe {
             srt::srt_getpeername(
                 self.id,
                 &mut addr as *mut sockaddr_in6 as *mut sockaddr,
@@ -393,636 +388,602 @@ impl SrtSocket {
             AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
             _ => unreachable!("libsrt returned a socket with an unrecognized family"),
         };
-        error::wrap_result(peer_addr, 0)
+        error::handle_result(peer_addr, result)
     }
     pub fn accept(&self) -> Result<(Self, SocketAddr)> {
-        let peer_id;
-        let peer_addr: SocketAddr;
-        unsafe {
-            let mut addr = mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>(
+        let mut addr = unsafe {
+            mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>(
                 [0; mem::size_of::<sockaddr_in6>()],
-            );
-            let mut _addrlen: c_int = mem::size_of::<sockaddr_in6>() as i32;
-            peer_id = srt::srt_accept(
+            )
+        };
+        let mut _addrlen: c_int = mem::size_of::<sockaddr_in6>() as i32;
+        let peer_id = unsafe {
+            srt::srt_accept(
                 self.id,
-                &mut addr as *mut sockaddr_in6 as *mut sockaddr,
+                &mut addr as *mut sockaddr_in6 as *mut libsrt_sys::sockaddr,
                 &mut _addrlen as *mut c_int,
-            );
-            peer_addr = match addr.sin6_family as i32 {
-                AF_INET => SocketAddr::V4(create_socket_addr_v4(mem::transmute_copy(&addr))),
-                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
-                f => unreachable!("libsrt returned a socket with an unrecognized family {}", f),
-            };
+            )
+        };
+        let peer_addr = match addr.sin6_family as i32 {
+            AF_INET => SocketAddr::V4(create_socket_addr_v4(unsafe { mem::transmute_copy(&addr) })),
+            AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
+            f => unreachable!("libsrt returned a socket with an unrecognized family {}", f),
         };
         Ok((Self { id: peer_id }, peer_addr))
     }
     pub fn close(self) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_close(self.id);
-        }
-        error::wrap_result((), result)
+        let result = unsafe { srt::srt_close(self.id) };
+        error::handle_result((), result)
     }
 }
 //Public get flag methods
 impl SrtSocket {
     pub fn get_connection_timeout(&self) -> Result<i32> {
         let mut msecs = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::ConnTimeO,
+                srt::SRT_SOCKOPT::SRTO_CONNTIMEO,
                 &mut msecs as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(msecs, result)
+            )
+        };
+        error::handle_result(msecs, result)
     }
     pub fn get_flight_flag_size(&self) -> Result<i32> {
         let mut packets = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::FC,
+                srt::SRT_SOCKOPT::SRTO_FC,
                 &mut packets as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(packets, result)
+            )
+        };
+        error::handle_result(packets, result)
     }
     pub fn get_input_bandwith(&self) -> Result<i64> {
         let mut bytes_per_sec = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::InputBW,
+                srt::SRT_SOCKOPT::SRTO_INPUTBW,
                 &mut bytes_per_sec as *mut i64 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes_per_sec, result)
+            )
+        };
+        error::handle_result(bytes_per_sec, result)
     }
     pub fn get_ip_type_of_service(&self) -> Result<i32> {
         let mut tos = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::IpTos,
+                srt::SRT_SOCKOPT::SRTO_IPTOS,
                 &mut tos as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(tos, result)
+            )
+        };
+        error::handle_result(tos, result)
     }
     pub fn get_initial_sequence_number(&self) -> Result<i32> {
         let mut sequences = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::ISN,
+                srt::SRT_SOCKOPT::SRTO_ISN,
                 &mut sequences as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(sequences, result)
+            )
+        };
+        error::handle_result(sequences, result)
     }
     pub fn get_ip_time_to_live(&self) -> Result<i32> {
         let mut hops = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::IpTtl,
+                srt::SRT_SOCKOPT::SRTO_IPTTL,
                 &mut hops as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(hops, result)
+            )
+        };
+        error::handle_result(hops, result)
     }
     pub fn get_ipv6_only(&self) -> Result<i32> {
         let mut value = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::Ipv6Only,
+                srt::SRT_SOCKOPT::SRTO_IPV6ONLY,
                 &mut value as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(value, result)
+            )
+        };
+        error::handle_result(value, result)
     }
     pub fn get_km_refresh_rate(&self) -> Result<i32> {
         let mut packets = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::KmRrefreshRate,
+                srt::SRT_SOCKOPT::SRTO_KMREFRESHRATE,
                 &mut packets as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(packets, result)
+            )
+        };
+        error::handle_result(packets, result)
     }
     pub fn get_km_preannounce(&self) -> Result<i32> {
         let mut packets = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::KmPreAnnounce,
+                srt::SRT_SOCKOPT::SRTO_KMPREANNOUNCE,
                 &mut packets as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(packets, result)
+            )
+        };
+        error::handle_result(packets, result)
     }
     pub fn get_linger(&self) -> Result<i32> {
         let mut linger = linger {
             l_onoff: 0,
             l_linger: 0,
         };
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::Linger,
+                srt::SRT_SOCKOPT::SRTO_LINGER,
                 &mut linger as *mut linger as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(linger.l_linger as i32, result)
+            )
+        };
+        error::handle_result(linger.l_linger as i32, result)
     }
     pub fn get_max_reorder_tolerance(&self) -> Result<i32> {
         let mut packets = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::LossMaxTtl,
+                srt::SRT_SOCKOPT::SRTO_LOSSMAXTTL,
                 &mut packets as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(packets, result)
+            )
+        };
+        error::handle_result(packets, result)
     }
     pub fn get_max_bandwith(&self) -> Result<i64> {
         let mut bytes_per_sec = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::MaxBW,
+                srt::SRT_SOCKOPT::SRTO_MAXBW,
                 &mut bytes_per_sec as *mut i64 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes_per_sec, result)
+            )
+        };
+        error::handle_result(bytes_per_sec, result)
     }
     pub fn get_mss(&self) -> Result<i32> {
         let mut bytes = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::Mss,
+                srt::SRT_SOCKOPT::SRTO_MSS,
                 &mut bytes as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes, result)
+            )
+        };
+        error::handle_result(bytes, result)
     }
     pub fn get_nak_report(&self) -> Result<bool> {
         let mut enabled = true;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::NakReport,
+                srt::SRT_SOCKOPT::SRTO_NAKREPORT,
                 &mut enabled as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(enabled, result)
+            )
+        };
+        error::handle_result(enabled, result)
     }
     pub fn get_encryption_key_length(&self) -> Result<i32> {
         let mut len = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::PBKeyLen,
+                srt::SRT_SOCKOPT::SRTO_PBKEYLEN,
                 &mut len as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(len, result)
+            )
+        };
+        error::handle_result(len, result)
     }
     pub fn get_peer_latency(&self) -> Result<i32> {
         let mut msecs = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::PeerLatency,
+                srt::SRT_SOCKOPT::SRTO_PEERLATENCY,
                 &mut msecs as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(msecs, result)
+            )
+        };
+        error::handle_result(msecs, result)
     }
     pub fn get_peer_version(&self) -> Result<i32> {
         let mut version = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::PeerVersion,
+                srt::SRT_SOCKOPT::SRTO_PEERVERSION,
                 &mut version as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(version, result)
+            )
+        };
+        error::handle_result(version, result)
     }
     pub fn get_receive_buffer(&self) -> Result<i32> {
         let mut bytes = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvBuf,
+                srt::SRT_SOCKOPT::SRTO_RCVBUF,
                 &mut bytes as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes, result)
+            )
+        };
+        error::handle_result(bytes, result)
     }
     pub fn get_receive_data(&self) -> Result<i32> {
         let mut packets = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvData,
+                srt::SRT_SOCKOPT::SRTO_RCVDATA,
                 &mut packets as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(packets, result)
+            )
+        };
+        error::handle_result(packets, result)
     }
     pub fn get_receive_km_state(&self) -> Result<SrtKmState> {
         let mut state = SrtKmState::Unsecured;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvKmState,
+                srt::SRT_SOCKOPT::SRTO_RCVKMSTATE,
                 &mut state as *mut SrtKmState as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(state, result)
+            )
+        };
+        error::handle_result(state, result)
     }
     pub fn get_receive_latency(&self) -> Result<i32> {
         let mut msecs = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvLatency,
+                srt::SRT_SOCKOPT::SRTO_RCVLATENCY,
                 &mut msecs as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(msecs, result)
+            )
+        };
+        error::handle_result(msecs, result)
     }
     pub fn get_receive_blocking(&self) -> Result<bool> {
         let mut blocking = true;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvSyn,
+                srt::SRT_SOCKOPT::SRTO_RCVSYN,
                 &mut blocking as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(blocking, result)
+            )
+        };
+        error::handle_result(blocking, result)
     }
     pub fn get_receive_timeout(&self) -> Result<i32> {
         let mut msecs = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvTimeO,
+                srt::SRT_SOCKOPT::SRTO_RCVTIMEO,
                 &mut msecs as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(msecs, result)
+            )
+        };
+        error::handle_result(msecs, result)
     }
     pub fn get_rendezvous(&self) -> Result<bool> {
         let mut rendezvous = false;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::Rendezvous,
+                srt::SRT_SOCKOPT::SRTO_RENDEZVOUS,
                 &mut rendezvous as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(rendezvous, result)
+            )
+        };
+        error::handle_result(rendezvous, result)
     }
     pub fn get_reuse_address(&self) -> Result<bool> {
         let mut rendezvous = false;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::ReuseAddr,
+                srt::SRT_SOCKOPT::SRTO_REUSEADDR,
                 &mut rendezvous as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(rendezvous, result)
+            )
+        };
+        error::handle_result(rendezvous, result)
     }
     pub fn get_send_buffer(&self) -> Result<i32> {
         let mut bytes = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::SndBuf,
+                srt::SRT_SOCKOPT::SRTO_SNDBUF,
                 &mut bytes as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes, result)
+            )
+        };
+        error::handle_result(bytes, result)
     }
     pub fn get_send_data(&self) -> Result<i32> {
         let mut packets = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::SndData,
+                srt::SRT_SOCKOPT::SRTO_SNDDATA,
                 &mut packets as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(packets, result)
+            )
+        };
+        error::handle_result(packets, result)
     }
     pub fn get_send_km_state(&self) -> Result<SrtKmState> {
         let mut state = SrtKmState::Unsecured;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::SndKmState,
+                srt::SRT_SOCKOPT::SRTO_SNDKMSTATE,
                 &mut state as *mut SrtKmState as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(state, result)
+            )
+        };
+        error::handle_result(state, result)
     }
     pub fn get_send_blocking(&self) -> Result<bool> {
         let mut blocking = true;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::SndSyn,
+                srt::SRT_SOCKOPT::SRTO_SNDSYN,
                 &mut blocking as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(blocking, result)
+            )
+        };
+        error::handle_result(blocking, result)
     }
     pub fn get_send_timeout(&self) -> Result<i32> {
         let mut secs = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::SndTimeO,
+                srt::SRT_SOCKOPT::SRTO_SNDTIMEO,
                 &mut secs as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(secs, result)
+            )
+        };
+        error::handle_result(secs, result)
     }
     pub fn get_connection_state(&self) -> Result<SrtSocketStatus> {
-        let mut state = SrtSocketStatus::Init;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut state = srt::SRT_SOCKSTATUS::SRTS_INIT;
+        let mut _optlen = mem::size_of_val(&state) as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::State,
-                &mut state as *mut SrtSocketStatus as *mut c_void,
+                srt::SRT_SOCKOPT::SRTO_STATE,
+                &mut state as *mut srt::SRT_SOCKSTATUS as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(state, result)
+            )
+        };
+        let state = match state {
+            srt::SRT_SOCKSTATUS::SRTS_INIT => SrtSocketStatus::Init,
+            srt::SRT_SOCKSTATUS::SRTS_OPENED => SrtSocketStatus::Opened,
+            srt::SRT_SOCKSTATUS::SRTS_LISTENING => SrtSocketStatus::Listening,
+            srt::SRT_SOCKSTATUS::SRTS_CONNECTING => SrtSocketStatus::Connecting,
+            srt::SRT_SOCKSTATUS::SRTS_CONNECTED => SrtSocketStatus::Connected,
+            srt::SRT_SOCKSTATUS::SRTS_BROKEN => SrtSocketStatus::Broken,
+            srt::SRT_SOCKSTATUS::SRTS_CLOSING => SrtSocketStatus::Closing,
+            srt::SRT_SOCKSTATUS::SRTS_CLOSED => SrtSocketStatus::Closed,
+            srt::SRT_SOCKSTATUS::SRTS_NONEXIST => SrtSocketStatus::NonExist,
+            _ => unreachable!("unrecognized SOCKSTATUS"),
+        };
+        error::handle_result(state, result)
     }
     pub fn get_stream_id(&self) -> Result<String> {
         let mut id = String::from_iter([' '; 512].iter());
         let mut id_len = mem::size_of_val(&id) as i32;
-        let result;
-        unsafe {
-            result = srt::srt_getsockflag(
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::State,
+                srt::SRT_SOCKOPT::SRTO_STATE,
                 id.as_mut_ptr() as *mut c_void,
                 &mut id_len as *mut c_int,
-            );
-        }
+            )
+        };
         id.truncate(id_len as usize);
-        error::wrap_result(id, result)
+        error::handle_result(id, result)
     }
     pub fn get_too_late_packet_drop(&self) -> Result<bool> {
         let mut enable = true;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::TlPktDrop,
+                srt::SRT_SOCKOPT::SRTO_TLPKTDROP,
                 &mut enable as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(enable, result)
+            )
+        };
+        error::handle_result(enable, result)
     }
     pub fn get_timestamp_based_packet_delivery_mode(&self) -> Result<bool> {
         let mut enable = true;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::TsbPdMode,
+                srt::SRT_SOCKOPT::SRTO_TSBPDMODE,
                 &mut enable as *mut bool as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(enable, result)
+            )
+        };
+        error::handle_result(enable, result)
     }
     pub fn get_udp_receive_buffer(&self) -> Result<i32> {
         let mut bytes = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::UdpRcvBuf,
+                srt::SRT_SOCKOPT::SRTO_UDP_RCVBUF,
                 &mut bytes as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes, result)
+            )
+        };
+        error::handle_result(bytes, result)
     }
     pub fn get_udp_send_buffer(&self) -> Result<i32> {
         let mut bytes = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::UdpSndBuf,
+                srt::SRT_SOCKOPT::SRTO_UDP_SNDBUF,
                 &mut bytes as *mut c_int as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(bytes, result)
+            )
+        };
+        error::handle_result(bytes, result)
     }
     pub fn get_srt_version(&self) -> Result<i32> {
         let mut version = 0;
-        let result;
-        unsafe {
-            let mut _optlen = mem::size_of::<i32>() as i32;
-            result = srt::srt_getsockflag(
+        let mut _optlen = mem::size_of::<i32>() as i32;
+        let result = unsafe {
+            srt::srt_getsockflag(
                 self.id,
-                srt::SrtSockOpt::Version,
+                srt::SRT_SOCKOPT::SRTO_VERSION,
                 &mut version as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
-            );
-        }
-        error::wrap_result(version, result)
+            )
+        };
+        error::handle_result(version, result)
     }
 }
 //Public set flag methods
 impl SrtSocket {
     pub fn set_input_bandwith(&self, bytes_per_sec: i64) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::InputBW,
+                srt::SRT_SOCKOPT::SRTO_INPUTBW,
                 &bytes_per_sec as *const i64 as *const c_void,
                 mem::size_of::<i64>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     pub fn set_recovery_bandwidth_overhead(&self, per_cent: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::OHeadBW,
+                srt::SRT_SOCKOPT::SRTO_OHEADBW,
                 &per_cent as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     pub fn set_receive_timeout(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvTimeO,
+                srt::SRT_SOCKOPT::SRTO_RCVTIMEO,
                 &msecs as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     pub fn set_send_blocking(&self, blocking: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::SndSyn,
+                srt::SRT_SOCKOPT::SRTO_SNDSYN,
                 &blocking as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     pub fn set_send_timeout(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::SndTimeO,
+                srt::SRT_SOCKOPT::SRTO_SNDTIMEO,
                 &msecs as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
 }
 
 impl Write for SrtSocket {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let size;
-        unsafe {
-            size = srt::srt_send(
+        let size = unsafe {
+            srt::srt_send(
                 self.id,
                 buf as *const [u8] as *const c_char,
                 buf.len() as i32,
-            );
-        }
+            )
+        };
         Ok(size as usize)
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -1032,9 +993,7 @@ impl Write for SrtSocket {
 impl Read for SrtSocket {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let size;
-        unsafe {
-            size = srt::srt_recv(self.id, buf as *mut [u8] as *mut c_char, buf.len() as i32);
-        }
+        unsafe { size = srt::srt_recv(self.id, buf as *mut [u8] as *mut c_char, buf.len() as i32) };
         Ok(size as usize)
     }
 }
@@ -1046,9 +1005,8 @@ impl SrtSocket {
             id: unsafe { srt::srt_create_socket() },
         }
     }
-    fn bind<A: ToSocketAddrs>(addrs: A) -> Result<Self> {
+    fn bind<A: ToSocketAddrs>(self, addrs: A) -> Result<Self> {
         if let Ok(addrs) = addrs.to_socket_addrs() {
-            let socket = SrtSocket::new();
             for addr in addrs {
                 match addr {
                     SocketAddr::V4(addr) => {
@@ -1056,24 +1014,24 @@ impl SrtSocket {
                         let result;
                         unsafe {
                             result = srt::srt_bind(
-                                socket.id,
+                                self.id,
                                 &addr as *const sockaddr_in as *const sockaddr,
                                 mem::size_of::<sockaddr_in>() as c_int,
                             );
                         }
-                        return error::wrap_result(socket, result);
+                        return error::handle_result(self, result);
                     }
                     SocketAddr::V6(addr) => {
                         let addr = create_sockaddr_in6(addr);
                         let result;
                         unsafe {
                             result = srt::srt_bind(
-                                socket.id,
+                                self.id,
                                 &addr as *const sockaddr_in6 as *const sockaddr,
                                 mem::size_of::<sockaddr_in6>() as c_int,
                             );
                         }
-                        return error::wrap_result(socket, result);
+                        return error::handle_result(self, result);
                     }
                 }
             }
@@ -1083,31 +1041,30 @@ impl SrtSocket {
     fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(&self, local: A, remote: B) -> Result<()> {
         let local_addr;
         if let Ok(mut addr) = local.to_socket_addrs() {
-            local_addr = addr.next();
+            local_addr = addr.next()
         } else {
             return Err(SrtError::SockFail);
-        }
+        };
         let remote_addr;
         if let Ok(mut addr) = remote.to_socket_addrs() {
-            remote_addr = addr.next();
+            remote_addr = addr.next()
         } else {
             return Err(SrtError::SockFail);
-        }
+        };
         match (local_addr, remote_addr) {
             (Some(SocketAddr::V4(local)), Some(SocketAddr::V4(remote))) => {
                 let local_addr = create_sockaddr_in(local);
                 let remote_addr = create_sockaddr_in(remote);
-                let result;
-                unsafe {
-                    result = srt::srt_rendezvous(
+                let result = unsafe {
+                    srt::srt_rendezvous(
                         self.id,
                         &local_addr as *const sockaddr_in as *const sockaddr,
                         mem::size_of::<sockaddr_in>() as c_int,
                         &remote_addr as *const sockaddr_in as *const sockaddr,
                         mem::size_of::<sockaddr_in>() as c_int,
-                    );
-                }
-                error::wrap_result((), result)
+                    )
+                };
+                error::handle_result((), result)
             }
             (Some(SocketAddr::V6(local)), Some(SocketAddr::V6(remote))) => {
                 let local_addr = create_sockaddr_in6(local);
@@ -1122,7 +1079,7 @@ impl SrtSocket {
                         mem::size_of::<sockaddr_in6>() as c_int,
                     );
                 }
-                error::wrap_result((), result)
+                error::handle_result((), result)
             }
             _ => Err(SrtError::SockFail),
         }
@@ -1137,7 +1094,7 @@ impl SrtSocket {
             }
         } else {
             return Err(SrtError::SockFail);
-        }
+        };
         match target_addr {
             SocketAddr::V4(target) => {
                 let target_addr = create_sockaddr_in(target);
@@ -1149,7 +1106,7 @@ impl SrtSocket {
                         mem::size_of::<sockaddr_in>() as c_int,
                     );
                 }
-                return error::wrap_result((), result);
+                return error::handle_result((), result);
             }
             SocketAddr::V6(target) => {
                 let id = unsafe { srt::srt_create_socket() };
@@ -1162,103 +1119,93 @@ impl SrtSocket {
                         mem::size_of::<sockaddr_in6>() as c_int,
                     );
                 }
-                return error::wrap_result((), result);
+                return error::handle_result((), result);
             }
         }
     }
     fn listen(&self, backlog: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_listen(self.id, backlog);
-        }
-        error::wrap_result((), result)
+        let result = unsafe { srt::srt_listen(self.id, backlog) };
+        error::handle_result((), result)
     }
 }
 
 impl SrtSocket {
     fn set_connection_timeout(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::ConnTimeO,
+                srt::SRT_SOCKOPT::SRTO_CONNTIMEO,
                 &msecs as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_flight_flag_size(&self, packets: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::FC,
+                srt::SRT_SOCKOPT::SRTO_FC,
                 &packets as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_ip_type_of_service(&self, type_of_service: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::IpTos,
+                srt::SRT_SOCKOPT::SRTO_IPTOS,
                 &type_of_service as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_ipv4_time_to_live(&self, hops: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::IpTtl,
+                srt::SRT_SOCKOPT::SRTO_IPTTL,
                 &hops as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_ipv6_only(&self, value: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Ipv6Only,
+                srt::SRT_SOCKOPT::SRTO_IPV6ONLY,
                 &value as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_km_refresh_rate(&self, packets: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::KmRrefreshRate,
+                srt::SRT_SOCKOPT::SRTO_KMREFRESHRATE,
                 &packets as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_km_preannounce(&self, packets: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::KmPreAnnounce,
+                srt::SRT_SOCKOPT::SRTO_KMPREANNOUNCE,
                 &packets as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     #[cfg(target_os = "linux")]
     fn set_linger(&self, secs: i32) -> Result<()> {
@@ -1266,16 +1213,15 @@ impl SrtSocket {
             l_onoff: (secs > 0) as i32,
             l_linger: secs,
         };
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Linger,
+                srt::SRT_SOCKOPT::SRTO_LINGER,
                 &lin as *const linger as *const c_void,
                 mem::size_of::<linger>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     #[cfg(target_os = "windows")]
     fn set_linger(&self, secs: i32) -> Result<()> {
@@ -1283,360 +1229,337 @@ impl SrtSocket {
             l_onoff: (secs > 0) as u16,
             l_linger: secs as u16,
         };
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Linger,
+                srt::SRT_SOCKOPT::SRTO_LINGER,
                 &lin as *const linger as *const c_void,
                 mem::size_of::<linger>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_max_reorder_tolerance(&self, packets: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::LossMaxTtl,
+                srt::SRT_SOCKOPT::SRTO_LOSSMAXTTL,
                 &packets as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_max_bandwith(&self, bytes_per_sec: i64) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::MaxBW,
+                srt::SRT_SOCKOPT::SRTO_MAXBW,
                 &bytes_per_sec as *const i64 as *const c_void,
                 mem::size_of::<i64>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_message_api(&self, enable: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::MessageApi,
+                srt::SRT_SOCKOPT::SRTO_MESSAGEAPI,
                 &enable as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_min_version(&self, version: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::MinVersion,
+                srt::SRT_SOCKOPT::SRTO_MINVERSION,
                 &version as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_mss(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Mss,
+                srt::SRT_SOCKOPT::SRTO_MSS,
                 &bytes as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_nak_report(&self, enable: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::NakReport,
+                srt::SRT_SOCKOPT::SRTO_NAKREPORT,
                 &enable as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_packet_filter(&self, filter: &str) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::PacketFilter,
+                srt::SRT_SOCKOPT::SRTO_PACKETFILTER,
                 filter[..512].as_ptr() as *const c_void,
                 filter[..512].len() as i32,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_passphrase(&self, passphrase: &str) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Passphrase,
+                srt::SRT_SOCKOPT::SRTO_PASSPHRASE,
                 passphrase as *const str as *const c_void,
                 passphrase.len() as i32,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_payload_size(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::PayloadSize,
+                srt::SRT_SOCKOPT::SRTO_PAYLOADSIZE,
                 &bytes as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_encryption_key_length(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::PBKeyLen,
+                srt::SRT_SOCKOPT::SRTO_PBKEYLEN,
                 &bytes as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_peer_idle_timeout(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::PeerIdleTimeO,
+                srt::SRT_SOCKOPT::SRTO_PEERIDLETIMEO,
                 &msecs as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_peer_latency(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::PeerLatency,
+                srt::SRT_SOCKOPT::SRTO_PEERLATENCY,
                 &msecs as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_receive_buffer(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvBuf,
+                srt::SRT_SOCKOPT::SRTO_RCVBUF,
                 &bytes as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_receive_latency(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvLatency,
+                srt::SRT_SOCKOPT::SRTO_RCVLATENCY,
                 &msecs as *const i32 as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_receive_blocking(&self, blocking: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::RcvSyn,
+                srt::SRT_SOCKOPT::SRTO_RCVSYN,
                 &blocking as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_rendezvous(&self, rendezvous: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Rendezvous,
+                srt::SRT_SOCKOPT::SRTO_RENDEZVOUS,
                 &rendezvous as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_reuse_address(&self, reuse: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::ReuseAddr,
+                srt::SRT_SOCKOPT::SRTO_REUSEADDR,
                 &reuse as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_congestion_controller(&self, controller: SrtCongestionController) -> Result<()> {
         let value = match controller {
             SrtCongestionController::Live => "live",
             SrtCongestionController::File => "file",
         };
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::Congestion,
+                srt::SRT_SOCKOPT::SRTO_CONGESTION,
                 value.as_ptr() as *const c_void,
                 value.len() as i32,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_send_buffer(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::SndBuf,
+                srt::SRT_SOCKOPT::SRTO_SNDBUF,
                 &bytes as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_send_drop_delay(&self, msecs: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::SndDropDelay,
+                srt::SRT_SOCKOPT::SRTO_SNDDROPDELAY,
                 &msecs as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_stream_id(&self, id: &str) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::StreamId,
+                srt::SRT_SOCKOPT::SRTO_STREAMID,
                 id[..512].as_ptr() as *const c_void,
                 id[..512].len() as i32,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_enforced_encryption(&self, enforced: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::EnforcedEncryption,
+                srt::SRT_SOCKOPT::SRTO_ENFORCEDENCRYPTION,
                 &enforced as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_too_late_packet_drop(&self, enable: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::TlPktDrop,
+                srt::SRT_SOCKOPT::SRTO_TLPKTDROP,
                 &enable as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_transmission_type(&self, transmission_type: SrtTransmissionType) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let trans_type = match transmission_type {
+            SrtTransmissionType::File => srt::SRT_TRANSTYPE::SRTT_FILE,
+            SrtTransmissionType::Live => srt::SRT_TRANSTYPE::SRTT_LIVE,
+            SrtTransmissionType::Invalid => srt::SRT_TRANSTYPE::SRTT_INVALID,
+        };
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::TransType,
-                &transmission_type as *const SrtTransmissionType as *const c_void,
-                mem::size_of::<SrtTransmissionType>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+                srt::SRT_SOCKOPT::SRTO_TRANSTYPE,
+                &trans_type as *const srt::SRT_TRANSTYPE as *const c_void,
+                mem::size_of_val(&trans_type) as c_int,
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_timestamp_based_packet_delivery_mode(&self, enable: bool) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::TsbPdMode,
+                srt::SRT_SOCKOPT::SRTO_TSBPDMODE,
                 &enable as *const bool as *const c_void,
                 mem::size_of::<bool>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_udp_send_buffer(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::UdpSndBuf,
+                srt::SRT_SOCKOPT::SRTO_UDP_SNDBUF,
                 &bytes as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
     fn set_udp_receive_buffer(&self, bytes: i32) -> Result<()> {
-        let result;
-        unsafe {
-            result = srt::srt_setsockflag(
+        let result = unsafe {
+            srt::srt_setsockflag(
                 self.id,
-                srt::SrtSockOpt::UdpRcvBuf,
+                srt::SRT_SOCKOPT::SRTO_UDP_RCVBUF,
                 &bytes as *const c_int as *const c_void,
                 mem::size_of::<i32>() as c_int,
-            );
-        }
-        error::wrap_result((), result)
+            )
+        };
+        error::handle_result((), result)
     }
 }
 
-#[repr(C)]
 pub enum SrtKmState {
-    Unsecured = 0,
-    Securing = 1,
-    Secured = 2,
-    NoSecret = 3,
-    BadSecret = 4,
+    Unsecured,
+    Securing,
+    Secured,
+    NoSecret,
+    BadSecret,
 }
-#[repr(C)]
+
+#[allow(dead_code)]
 enum SrtTransmissionType {
     Live,
     File,
-    _Invalid,
+    Invalid,
 }
 enum SrtCongestionController {
     Live,
@@ -1743,41 +1666,64 @@ fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
 mod tests {
     use crate as srt;
     use srt::SrtBuilder;
-    use std::{sync::mpsc, thread};
+    use std::{
+        io::{Read, Write},
+        net::SocketAddr,
+        sync::mpsc,
+        thread,
+    };
 
     #[test]
     fn test_connect_accept() {
         srt::startup().expect("failed startup");
-        let (tx, rx) = mpsc::channel::<()>();
+        let (tx, rx) = mpsc::channel::<SocketAddr>();
         thread::spawn(move || {
-            let listen = SrtBuilder::new().listen("127.0.0.1:12", 1);
-            assert!(listen.is_ok());
-            let listen = listen.unwrap();
-            tx.send(()).unwrap();
-            let accept = listen.accept();
-            assert!(accept.is_ok());
-            let (peer, _peer_addr) = accept.unwrap();
+            let listen = SrtBuilder::new()
+                .set_file_transmission_type()
+                .listen("127.0.0.2:0", 1)
+                .expect("fail listen()");
+            let local = listen.local_addr().expect("fail local_addr()");
+            tx.send(local).expect("fail send through mpsc channel");
+            let (mut peer, _peer_addr) = listen.accept().expect("fail accep()");
+            peer.write_all(b"testing").expect("fail write()");
             assert!(peer.close().is_ok());
             assert!(listen.close().is_ok());
         });
-        rx.recv().unwrap();
-        let connect = SrtBuilder::new().connect("127.0.0.1:23", "127.0.0.1:12");
-        assert!(connect.is_ok());
-        assert!(connect.unwrap().close().is_ok());
-        srt::cleanup().expect("failed cleanup");
+        let addr = rx.recv().expect("fail recv through mpsc channel");
+        let mut connect = SrtBuilder::new()
+            .set_file_transmission_type()
+            .connect("127.0.0.1:0", addr)
+            .expect("fail connect()");
+        let mut buf = Vec::new();
+        connect.read_to_end(&mut buf).expect("fail read()");
+        assert_eq!(
+            std::str::from_utf8(&buf).expect("malformed message"),
+            "testing"
+        );
+        assert!(connect.close().is_ok());
+        srt::cleanup().expect("failed cleanup()");
     }
-
     #[test]
     fn test_rendezvous() {
         srt::startup().expect("failed startup");
         thread::spawn(move || {
-            let one = SrtBuilder::new().rendezvous("127.0.0.1:12", "127.0.0.1:23");
-            assert!(one.is_ok());
-            let one = one.unwrap();
+            let mut one = SrtBuilder::new()
+                .set_file_transmission_type()
+                .rendezvous("127.0.0.2:123", "127.0.0.1:234")
+                .expect("fail rendezvous()");
+            one.write_all(b"testing").expect("fail write()");
             assert!(one.close().is_ok());
         });
-        let two = SrtBuilder::new().rendezvous("127.0.0.1:23", "127.0.0.1:12");
-        assert!(two.is_ok());
+        let mut two = SrtBuilder::new()
+            .set_file_transmission_type()
+            .rendezvous("127.0.0.1:234", "127.0.0.2:123")
+            .expect("fail rendezvous()");
+        let mut buf = Vec::new();
+        two.read_to_end(&mut buf).expect("fail read()");
+        assert_eq!(
+            std::str::from_utf8(&buf).expect("malformed message"),
+            "testing"
+        );
         srt::cleanup().expect("failed cleanup");
     }
 }
