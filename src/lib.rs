@@ -6,11 +6,12 @@ use libsrt_sys as srt;
 use socket::SrtSocket;
 
 use std::{
+    convert::TryInto,
     io::{self, Read, Write},
     iter::Iterator,
     net::{SocketAddr, ToSocketAddrs},
     ops::Drop,
-    os::raw::{c_int, c_uint},
+    os::raw::c_int,
 };
 
 pub use socket::{SrtCongestionController, SrtKmState, SrtSocketStatus, SrtTransmissionType};
@@ -842,7 +843,7 @@ impl Epoll {
             .map(|event| {
                 (
                     SrtSocket { id: event.fd },
-                    srt::SRT_EPOLL_OPT(event.events as c_uint),
+                    srt::SRT_EPOLL_OPT(event.events.try_into().expect("invalid events")),
                 )
             })
             .collect())

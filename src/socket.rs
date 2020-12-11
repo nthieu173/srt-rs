@@ -5,11 +5,12 @@ use libsrt_sys as srt;
 use srt::sockaddr;
 
 use std::{
+    convert::TryInto,
     ffi::c_void,
     iter::FromIterator,
     mem,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
-    os::raw::{c_char, c_int, c_uint},
+    os::raw::{c_char, c_int},
 };
 
 #[cfg(target_os = "linux")]
@@ -302,17 +303,20 @@ impl SrtSocket {
         error::handle_result((blocks, bytes), result)
     }
     pub fn get_events(&self) -> Result<srt::SRT_EPOLL_OPT> {
-        let mut events = 0;
+        let mut events: i32 = 0;
         let mut _optlen = mem::size_of::<i32>() as i32;
         let result = unsafe {
             srt::srt_getsockflag(
                 self.id,
                 srt::SRT_SOCKOPT::SRTO_EVENT,
-                &mut events as *mut c_uint as *mut c_void,
+                &mut events as *mut i32 as *mut c_void,
                 &mut _optlen as *mut c_int,
             )
         };
-        error::handle_result(srt::SRT_EPOLL_OPT(events), result)
+        error::handle_result(
+            srt::SRT_EPOLL_OPT(events.try_into().expect("invalid events")),
+            result,
+        )
     }
 }
 //Public get flag methods
