@@ -1,6 +1,6 @@
 [package]
 name = "libsrt-sys"
-version = "1.4.12"
+version = "1.4.13"
 authors = ["Hieu Nguyen <nthieu173@gmail.com>"]
 edition = "2018"
 license = "MPL-2.0"
