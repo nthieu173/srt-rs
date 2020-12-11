@@ -73,7 +73,7 @@ pub fn handle_result<T>(ok: T, return_code: i32) -> Result<T, SrtError> {
                 e => Err(e),
             }
         }
-        _ => unreachable!("unrecognized return code"),
+        e => unreachable!("unrecognized return code {}", e),
     }
 }
 

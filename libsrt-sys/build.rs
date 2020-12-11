@@ -47,6 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .whitelist_function("srt_.*")
         .whitelist_type("SRT.*")
         .whitelist_var("SRT.*")
+        .bitfield_enum("SRT_EPOLL_OPT")
         .default_enum_style(bindgen::EnumVariation::NewType { is_bitfield: false })
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
