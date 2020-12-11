@@ -493,7 +493,8 @@ impl SrtAsyncBuilder {
         socket.set_send_blocking(false)?;
         socket.connect(remote)?;
         let mut epoll = Epoll::new()?;
-        let events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN | srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT;
+        let mut events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN;
+        events |= srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT;
         epoll.add(&socket, &events)?;
         Ok(SrtAsyncStream { socket, epoll })
     }
@@ -517,7 +518,8 @@ impl SrtAsyncBuilder {
         socket.rendezvous(local, remote)?;
         socket.set_send_blocking(false)?;
         let mut epoll = Epoll::new()?;
-        let events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN | srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT;
+        let mut events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN;
+        events |= srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT;
         epoll.add(&socket, &events)?;
         Ok(SrtAsyncStream { socket, epoll })
     }
