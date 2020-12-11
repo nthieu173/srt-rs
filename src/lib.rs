@@ -10,7 +10,7 @@ use std::{
     iter::Iterator,
     net::{SocketAddr, ToSocketAddrs},
     ops::Drop,
-    os::raw::c_int,
+    os::raw::{c_int, c_uint},
 };
 
 pub use socket::{SrtCongestionController, SrtKmState, SrtSocketStatus, SrtTransmissionType};
@@ -842,7 +842,7 @@ impl Epoll {
             .map(|event| {
                 (
                     SrtSocket { id: event.fd },
-                    srt::SRT_EPOLL_OPT(event.events as u32),
+                    srt::SRT_EPOLL_OPT(event.events as c_uint),
                 )
             })
             .collect())

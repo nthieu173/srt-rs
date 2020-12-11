@@ -9,7 +9,7 @@ use std::{
     iter::FromIterator,
     mem,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
-    os::raw::{c_char, c_int},
+    os::raw::{c_char, c_int, c_uint},
 };
 
 #[cfg(target_os = "linux")]
@@ -308,7 +308,7 @@ impl SrtSocket {
             srt::srt_getsockflag(
                 self.id,
                 srt::SRT_SOCKOPT::SRTO_EVENT,
-                &mut events as *mut u32 as *mut c_void,
+                &mut events as *mut c_uint as *mut c_void,
                 &mut _optlen as *mut c_int,
             )
         };
