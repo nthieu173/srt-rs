@@ -601,26 +601,20 @@ impl AsyncRead for SrtAsyncStream {
         buf: &mut [u8],
     ) -> Poll<std::result::Result<usize, io::Error>> {
         match self.socket.recv(buf) {
-            Ok(s) => {
-                println!("{}", s);
-                Poll::Ready(Ok(s))
-            }
-            Err(e) => {
-                println!("{:?}", e);
-                match e {
-                    SrtError::AsyncRcv => {
-                        let waker = cx.waker().clone();
-                        let mut epoll = Epoll::new()?;
-                        epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_IN)?;
-                        thread::spawn(move || {
-                            if let Ok(_) = epoll.wait(-1) {}
-                            waker.wake();
-                        });
-                        Poll::Pending
-                    }
-                    e => Poll::Ready(Err(e.into())),
+            Ok(s) => Poll::Ready(Ok(s)),
+            Err(e) => match e {
+                SrtError::AsyncRcv => {
+                    let waker = cx.waker().clone();
+                    let mut epoll = Epoll::new()?;
+                    epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_IN)?;
+                    thread::spawn(move || {
+                        if let Ok(_) = epoll.wait(-1) {}
+                        waker.wake();
+                    });
+                    Poll::Pending
                 }
-            }
+                e => Poll::Ready(Err(e.into())),
+            },
         }
     }
 }
