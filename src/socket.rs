@@ -6,7 +6,7 @@ use srt::sockaddr;
 
 use std::{
     convert::TryInto,
-    ffi::c_void,
+    ffi::{c_void, CStr},
     iter::FromIterator,
     mem,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
@@ -41,7 +41,7 @@ pub enum SrtSocketStatus {
     NonExist,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct SrtSocket {
     pub id: i32,
 }
@@ -300,7 +300,11 @@ impl SrtSocket {
         let result = unsafe {
             srt::srt_getsndbuffer(self.id, &mut blocks as *mut usize, &mut bytes as *mut usize)
         };
-        error::handle_result((blocks, bytes), result)
+        if result == -1 {
+            error::handle_result((blocks, bytes), result)
+        } else {
+            Ok((blocks, bytes))
+        }
     }
     pub fn get_events(&self) -> Result<srt::SRT_EPOLL_OPT> {
         let mut events: i32 = 0;
@@ -610,6 +614,16 @@ impl SrtSocket {
         };
         error::handle_result(msecs, result)
     }
+    pub fn get_reject_reason(&self) -> Option<&str> {
+        let result = unsafe { srt::srt_getrejectreason(self.id) };
+        let reason = srt::SRT_REJECT_REASON(result.try_into().expect("invalid reject code"));
+        if reason == srt::SRT_REJECT_REASON::SRT_REJ_UNKNOWN {
+            None
+        } else {
+            let result = unsafe { CStr::from_ptr(srt::srt_rejectreason_str(result)) };
+            Some(result.to_str().expect("malformed reject reason"))
+        }
+    }
     pub fn get_rendezvous(&self) -> Result<bool> {
         let mut rendezvous = false;
         let mut _optlen = mem::size_of::<i32>() as i32;
@@ -701,7 +715,7 @@ impl SrtSocket {
         };
         error::handle_result(secs, result)
     }
-    pub fn get_connection_state(&self) -> Result<SrtSocketStatus> {
+    pub fn get_socket_state(&self) -> Result<SrtSocketStatus> {
         let mut _optlen = mem::size_of::<srt::SRT_SOCKSTATUS>() as i32;
         let state = unsafe { srt::srt_getsockstate(self.id) };
         let state = match state {

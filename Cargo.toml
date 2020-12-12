@@ -13,6 +13,9 @@ readme = "README.md"
 [dependencies]
 libsrt-sys = { path = "libsrt-sys", version = "1.4.13" }
 libc = "0.2"
+futures = "0.3"
+async-std = {version ="1.8", features=["attributes"]}
+
 
 [target.'cfg(windows)'.dependencies]
 winapi = {version = "0.3", features = ["winsock2", "ws2def", "ws2ipdef", "inaddr", "in6addr"] }

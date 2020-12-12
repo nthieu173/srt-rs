@@ -3,7 +3,12 @@ mod socket;
 
 use error::SrtError;
 use libsrt_sys as srt;
-use socket::SrtSocket;
+
+use futures::{
+    future::Future,
+    io::{AsyncRead, AsyncWrite},
+    task::{Context, Poll},
+};
 
 use std::{
     convert::TryInto,
@@ -12,15 +17,23 @@ use std::{
     net::{SocketAddr, ToSocketAddrs},
     ops::Drop,
     os::raw::c_int,
+    pin::Pin,
+    thread,
 };
 
-pub use socket::{SrtCongestionController, SrtKmState, SrtSocketStatus, SrtTransmissionType};
+pub use socket::{
+    SrtCongestionController, SrtKmState, SrtSocket, SrtSocketStatus, SrtTransmissionType,
+};
 
 type Result<T> = std::result::Result<T, SrtError>;
 
 pub fn startup() -> Result<()> {
     let result = unsafe { srt::srt_startup() };
-    error::handle_result((), result)
+    if result == 1 {
+        Ok(())
+    } else {
+        error::handle_result((), result)
+    }
 }
 
 pub fn cleanup() -> Result<()> {
@@ -75,6 +88,9 @@ impl SrtStream {
     }
     pub fn set_recovery_bandwidth_overhead(&self, per_cent: i32) -> Result<()> {
         self.socket.set_recovery_bandwidth_overhead(per_cent)
+    }
+    pub fn set_retransmission_algorithm(&self, reduced: bool) -> Result<()> {
+        self.socket.set_retransmission_algorithm(reduced)
     }
     pub fn set_receive_timeout(&self, msecs: i32) -> Result<()> {
         self.socket.set_receive_timeout(msecs)
@@ -169,8 +185,8 @@ impl SrtStream {
     pub fn get_send_timeout(&self) -> Result<i32> {
         self.socket.get_send_timeout()
     }
-    pub fn get_connection_state(&self) -> Result<SrtSocketStatus> {
-        self.socket.get_connection_state()
+    pub fn get_socket_state(&self) -> Result<SrtSocketStatus> {
+        self.socket.get_socket_state()
     }
     pub fn get_stream_id(&self) -> Result<String> {
         self.socket.get_stream_id()
@@ -231,6 +247,7 @@ impl SrtBuilder {
         remote: B,
     ) -> Result<SrtStream> {
         let socket = SrtSocket::new()?;
+        socket.set_rendezvous(true)?;
         self.config_socket(&socket)?;
         socket.rendezvous(local, remote)?;
         Ok(SrtStream { socket })
@@ -332,10 +349,6 @@ impl SrtBuilder {
         self.opt_vec.push(SrtPreConnectOpt::RcvLatency(msecs));
         self
     }
-    pub fn set_rendezvous(mut self, rendezvous: bool) -> Self {
-        self.opt_vec.push(SrtPreConnectOpt::Rendezvous(rendezvous));
-        self
-    }
     pub fn set_retransmission_algorithm(mut self, reduced: bool) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::RetrainsmitAlgo(reduced));
@@ -426,7 +439,7 @@ impl SrtBuilder {
                 SrtPreConnectOpt::RcvBuf(value) => socket.set_receive_buffer(value)?,
                 SrtPreConnectOpt::RcvLatency(value) => socket.set_receive_latency(value)?,
                 SrtPreConnectOpt::RcvSyn(value) => socket.set_receive_blocking(value)?,
-                SrtPreConnectOpt::Rendezvous(value) => socket.set_rendezvous(value)?,
+                SrtPreConnectOpt::_Rendezvous(value) => socket.set_rendezvous(value)?,
                 SrtPreConnectOpt::RetrainsmitAlgo(value) => {
                     socket.set_retransmission_algorithm(value)?
                 }
@@ -453,15 +466,337 @@ impl SrtBuilder {
 
 pub struct SrtAsyncStream {
     socket: SrtSocket,
-    epoll: Epoll,
 }
 
 impl SrtAsyncStream {
+    pub fn local_addr(&self) -> Result<SocketAddr> {
+        self.socket.local_addr()
+    }
+    pub fn set_time_drift_tracer(&self, enable: bool) -> Result<()> {
+        self.socket.set_time_drift_tracer(enable)
+    }
+    pub fn set_input_bandwith(&self, bytes_per_sec: i64) -> Result<()> {
+        self.socket.set_input_bandwith(bytes_per_sec)
+    }
+    pub fn set_recovery_bandwidth_overhead(&self, per_cent: i32) -> Result<()> {
+        self.socket.set_recovery_bandwidth_overhead(per_cent)
+    }
+    pub fn set_retransmission_algorithm(&self, reduced: bool) -> Result<()> {
+        self.socket.set_retransmission_algorithm(reduced)
+    }
+    pub fn get_flight_flag_size(&self) -> Result<i32> {
+        self.socket.get_flight_flag_size()
+    }
+    pub fn get_input_bandwith(&self) -> Result<i64> {
+        self.socket.get_input_bandwith()
+    }
+    pub fn get_ip_type_of_service(&self) -> Result<i32> {
+        self.socket.get_ip_type_of_service()
+    }
+    pub fn get_initial_sequence_number(&self) -> Result<i32> {
+        self.socket.get_initial_sequence_number()
+    }
+    pub fn get_ip_time_to_live(&self) -> Result<i32> {
+        self.socket.get_ip_time_to_live()
+    }
+    pub fn get_ipv6_only(&self) -> Result<i32> {
+        self.socket.get_ipv6_only()
+    }
+    pub fn get_km_refresh_rate(&self) -> Result<i32> {
+        self.socket.get_km_refresh_rate()
+    }
+    pub fn get_km_preannounce(&self) -> Result<i32> {
+        self.socket.get_km_preannounce()
+    }
+    pub fn get_linger(&self) -> Result<i32> {
+        self.socket.get_linger()
+    }
+    pub fn get_max_reorder_tolerance(&self) -> Result<i32> {
+        self.socket.get_max_reorder_tolerance()
+    }
+    pub fn get_max_bandwith(&self) -> Result<i64> {
+        self.socket.get_max_bandwith()
+    }
+    pub fn get_mss(&self) -> Result<i32> {
+        self.socket.get_mss()
+    }
+    pub fn get_nak_report(&self) -> Result<bool> {
+        self.socket.get_nak_report()
+    }
+    pub fn get_encryption_key_length(&self) -> Result<i32> {
+        self.socket.get_encryption_key_length()
+    }
+    pub fn get_peer_latency(&self) -> Result<i32> {
+        self.socket.get_peer_latency()
+    }
+    pub fn get_peer_version(&self) -> Result<i32> {
+        self.socket.get_peer_version()
+    }
+    pub fn get_receive_buffer(&self) -> Result<i32> {
+        self.socket.get_receive_buffer()
+    }
+    pub fn get_receive_data(&self) -> Result<i32> {
+        self.socket.get_receive_data()
+    }
+    pub fn get_receive_km_state(&self) -> Result<SrtKmState> {
+        self.socket.get_receive_km_state()
+    }
+    pub fn get_receive_latency(&self) -> Result<i32> {
+        self.socket.get_receive_latency()
+    }
+    pub fn get_receive_blocking(&self) -> Result<bool> {
+        self.socket.get_receive_blocking()
+    }
+    pub fn get_receive_timeout(&self) -> Result<i32> {
+        self.socket.get_receive_timeout()
+    }
+    pub fn get_rendezvous(&self) -> Result<bool> {
+        self.socket.get_rendezvous()
+    }
+    pub fn get_reuse_address(&self) -> Result<bool> {
+        self.socket.get_reuse_address()
+    }
+    pub fn get_send_buffer(&self) -> Result<i32> {
+        self.socket.get_send_buffer()
+    }
+    pub fn get_send_data(&self) -> Result<i32> {
+        self.socket.get_send_data()
+    }
+    pub fn get_send_km_state(&self) -> Result<SrtKmState> {
+        self.socket.get_send_km_state()
+    }
+    pub fn get_send_blocking(&self) -> Result<bool> {
+        self.socket.get_send_blocking()
+    }
+    pub fn get_send_timeout(&self) -> Result<i32> {
+        self.socket.get_send_timeout()
+    }
+    pub fn get_socket_state(&self) -> Result<SrtSocketStatus> {
+        self.socket.get_socket_state()
+    }
+    pub fn get_stream_id(&self) -> Result<String> {
+        self.socket.get_stream_id()
+    }
+    pub fn get_too_late_packet_drop(&self) -> Result<bool> {
+        self.socket.get_too_late_packet_drop()
+    }
+    pub fn get_timestamp_based_packet_delivery_mode(&self) -> Result<bool> {
+        self.socket.get_timestamp_based_packet_delivery_mode()
+    }
+    pub fn get_udp_receive_buffer(&self) -> Result<i32> {
+        self.socket.get_udp_receive_buffer()
+    }
+    pub fn get_udp_send_buffer(&self) -> Result<i32> {
+        self.socket.get_udp_send_buffer()
+    }
+    pub fn get_srt_version(&self) -> Result<i32> {
+        self.socket.get_srt_version()
+    }
+}
+
+impl AsyncRead for SrtAsyncStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<std::result::Result<usize, io::Error>> {
+        match self.socket.recv(buf) {
+            Ok(s) => {
+                println!("{}", s);
+                Poll::Ready(Ok(s))
+            }
+            Err(e) => {
+                println!("{:?}", e);
+                match e {
+                    SrtError::AsyncRcv => {
+                        let waker = cx.waker().clone();
+                        let mut epoll = Epoll::new()?;
+                        epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_IN)?;
+                        thread::spawn(move || {
+                            if let Ok(_) = epoll.wait(-1) {}
+                            waker.wake();
+                        });
+                        Poll::Pending
+                    }
+                    e => Poll::Ready(Err(e.into())),
+                }
+            }
+        }
+    }
+}
+
+impl AsyncWrite for SrtAsyncStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::result::Result<usize, io::Error>> {
+        match self.socket.send(buf) {
+            Ok(s) => Poll::Ready(Ok(s)),
+            Err(e) => match e {
+                SrtError::AsyncSnd => match self.socket.get_sender_buffer() {
+                    Ok((_blocks, bytes)) => {
+                        if bytes == 0 {
+                            Poll::Ready(Ok(0))
+                        } else {
+                            let waker = cx.waker().clone();
+                            let mut epoll = Epoll::new()?;
+                            epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT)?;
+                            thread::spawn(move || {
+                                epoll.wait(-1).expect("epoll wait error");
+                                waker.wake();
+                            });
+                            Poll::Pending
+                        }
+                    }
+                    Err(e) => Poll::Ready(Err(e.into())),
+                },
+                e => Poll::Ready(Err(e.into())),
+            },
+        }
+    }
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::result::Result<(), io::Error>> {
+        match self.socket.get_sender_buffer() {
+            Ok((_blocks, bytes)) => {
+                if bytes == 0 {
+                    Poll::Ready(Ok(()))
+                } else {
+                    let waker = cx.waker().clone();
+                    let mut epoll = Epoll::new()?;
+                    epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT)?;
+                    thread::spawn(move || {
+                        epoll.wait(-1).expect("epoll wait error");
+                        waker.wake();
+                    });
+                    Poll::Pending
+                }
+            }
+            Err(e) => Poll::Ready(Err(e.into())),
+        }
+    }
+    fn poll_close(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<std::result::Result<(), io::Error>> {
+        match self.socket.get_sender_buffer() {
+            Ok((_blocks, bytes)) => {
+                if bytes == 0 {
+                    Poll::Ready(match self.socket.close() {
+                        Ok(()) => Ok(()),
+                        Err(e) => Err(e.into()),
+                    })
+                } else {
+                    let waker = cx.waker().clone();
+                    let mut epoll = Epoll::new()?;
+                    epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT)?;
+                    thread::spawn(move || {
+                        epoll.wait(-1).expect("epoll wait error");
+                        waker.wake();
+                    });
+                    Poll::Pending
+                }
+            }
+            Err(e) => Poll::Ready(Err(e.into())),
+        }
+    }
+}
+
+pub struct SrtAsyncListener {
+    socket: SrtSocket,
+}
+
+impl SrtAsyncListener {
+    pub fn accept(&self) -> AcceptFuture {
+        AcceptFuture {
+            socket: self.socket,
+        }
+    }
     pub fn close(self) -> Result<()> {
         self.socket.close()
     }
     pub fn local_addr(&self) -> Result<SocketAddr> {
         self.socket.local_addr()
+    }
+}
+
+pub struct AcceptFuture {
+    socket: SrtSocket,
+}
+
+impl Future for AcceptFuture {
+    type Output = Result<(SrtAsyncStream, SocketAddr)>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.socket.accept() {
+            Ok((socket, addr)) => {
+                let r_b = socket.set_receive_blocking(false);
+                let s_b = socket.set_send_blocking(false);
+                if r_b.is_err() {
+                    Poll::Ready(Err(r_b.expect_err("unreachable")))
+                } else if s_b.is_err() {
+                    Poll::Ready(Err(s_b.expect_err("unreachable")))
+                } else {
+                    Poll::Ready(Ok((SrtAsyncStream { socket }, addr)))
+                }
+            }
+            Err(e) => match e {
+                SrtError::AsyncRcv => {
+                    let waker = cx.waker().clone();
+                    let mut epoll = Epoll::new()?;
+                    epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_IN)?;
+                    thread::spawn(move || {
+                        if let Ok(_) = epoll.wait(-1) {
+                            waker.wake();
+                        }
+                    });
+                    Poll::Pending
+                }
+                e => Poll::Ready(Err(e)),
+            },
+        }
+    }
+}
+
+pub struct ConnectFuture {
+    socket: SrtSocket,
+}
+
+impl Future for ConnectFuture {
+    type Output = Result<SrtAsyncStream>;
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.socket.get_socket_state() {
+            Ok(s) => match s {
+                SrtSocketStatus::Connected => Poll::Ready(Ok(SrtAsyncStream {
+                    socket: self.socket,
+                })),
+                SrtSocketStatus::Broken => Poll::Ready(Err(SrtError::ConnLost)),
+                SrtSocketStatus::Init => Poll::Ready(Err(SrtError::UnboundSock)),
+                SrtSocketStatus::Opened => Poll::Ready(Err(SrtError::InvOp)),
+                SrtSocketStatus::Listening => Poll::Ready(Err(SrtError::InvOp)),
+                SrtSocketStatus::Connecting => {
+                    if let Some(_reason) = self.socket.get_reject_reason() {
+                        Poll::Ready(Err(SrtError::ConnRej))
+                    } else {
+                        let waker = cx.waker().clone();
+                        let mut epoll = Epoll::new()?;
+                        let events =
+                            srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT | srt::SRT_EPOLL_OPT::SRT_EPOLL_ERR;
+                        epoll.add(&self.socket, &events)?;
+                        thread::spawn(move || {
+                            epoll.wait(-1).expect("epoll wait error");
+                            waker.wake();
+                        });
+                        Poll::Pending
+                    }
+                }
+                SrtSocketStatus::Closing => Poll::Ready(Err(SrtError::Closed)),
+                SrtSocketStatus::Closed => Poll::Ready(Err(SrtError::Closed)),
+                SrtSocketStatus::NonExist => Poll::Ready(Err(SrtError::InvSock)),
+            },
+            Err(e) => Poll::Ready(Err(e)),
+        }
     }
 }
 
@@ -469,58 +804,34 @@ pub struct SrtAsyncBuilder {
     opt_vec: Vec<SrtPreConnectOpt>,
 }
 
-pub struct SrtAsyncListener {
-    socket: SrtSocket,
-    epoll: Epoll,
-}
-
-impl SrtAsyncListener {
-    pub fn accept(&self) -> Result<(SrtStream, SocketAddr)> {
-        let (socket, addr) = self.socket.accept()?;
-        Ok((SrtStream { socket }, addr))
-    }
-    pub fn close(self) -> Result<()> {
-        self.socket.close()
-    }
-    pub fn local_addr(&self) -> Result<SocketAddr> {
-        self.socket.local_addr()
-    }
-}
-
 impl SrtAsyncBuilder {
-    pub fn connect<A: ToSocketAddrs>(self, remote: A) -> Result<SrtAsyncStream> {
+    pub fn connect<A: ToSocketAddrs>(self, remote: A) -> Result<ConnectFuture> {
         let socket = SrtSocket::new()?;
         self.config_socket(&socket)?;
         socket.set_send_blocking(false)?;
         socket.connect(remote)?;
-        let mut epoll = Epoll::new()?;
-        let events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN | srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT;
-        epoll.add(&socket, &events)?;
-        Ok(SrtAsyncStream { socket, epoll })
+        socket.set_receive_blocking(false)?;
+        Ok(ConnectFuture { socket })
     }
     pub fn listen<A: ToSocketAddrs>(self, addr: A, backlog: i32) -> Result<SrtAsyncListener> {
         let socket = SrtSocket::new()?;
         self.config_socket(&socket)?;
         let socket = socket.bind(addr)?;
-        socket.listen(backlog)?;
-        let mut epoll = Epoll::new()?;
-        let events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN;
-        epoll.add(&socket, &events)?;
-        Ok(SrtAsyncListener { socket, epoll })
+        socket.listen(backlog)?; // Still synchronous
+        Ok(SrtAsyncListener { socket })
     }
     pub fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(
         self,
         local: A,
         remote: B,
-    ) -> Result<SrtAsyncStream> {
+    ) -> Result<ConnectFuture> {
         let socket = SrtSocket::new()?;
+        socket.set_rendezvous(true)?;
         self.config_socket(&socket)?;
-        socket.rendezvous(local, remote)?;
         socket.set_send_blocking(false)?;
-        let mut epoll = Epoll::new()?;
-        let events = srt::SRT_EPOLL_OPT::SRT_EPOLL_IN | srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT;
-        epoll.add(&socket, &events)?;
-        Ok(SrtAsyncStream { socket, epoll })
+        socket.rendezvous(local, remote)?;
+        socket.set_receive_blocking(false)?;
+        Ok(ConnectFuture { socket })
     }
 }
 
@@ -619,10 +930,6 @@ impl SrtAsyncBuilder {
         self.opt_vec.push(SrtPreConnectOpt::RcvLatency(msecs));
         self
     }
-    pub fn set_rendezvous(mut self, rendezvous: bool) -> Self {
-        self.opt_vec.push(SrtPreConnectOpt::Rendezvous(rendezvous));
-        self
-    }
     pub fn set_retransmission_algorithm(mut self, reduced: bool) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::RetrainsmitAlgo(reduced));
@@ -713,7 +1020,7 @@ impl SrtAsyncBuilder {
                 SrtPreConnectOpt::RcvBuf(value) => socket.set_receive_buffer(value)?,
                 SrtPreConnectOpt::RcvLatency(value) => socket.set_receive_latency(value)?,
                 SrtPreConnectOpt::RcvSyn(value) => socket.set_receive_blocking(value)?,
-                SrtPreConnectOpt::Rendezvous(value) => socket.set_rendezvous(value)?,
+                SrtPreConnectOpt::_Rendezvous(value) => socket.set_rendezvous(value)?,
                 SrtPreConnectOpt::RetrainsmitAlgo(value) => {
                     socket.set_retransmission_algorithm(value)?
                 }
@@ -764,7 +1071,7 @@ enum SrtPreConnectOpt {
     RcvBuf(i32),
     RcvLatency(i32),
     RcvSyn(bool),
-    Rendezvous(bool),
+    _Rendezvous(bool),
     RetrainsmitAlgo(bool),
     ReuseAddr(bool),
     Congestion(SrtCongestionController),
@@ -809,6 +1116,7 @@ impl Epoll {
         }
         error::handle_result((), result)
     }
+    #[allow(dead_code)]
     fn remove(&mut self, socket: &SrtSocket) -> Result<()> {
         let result = unsafe { srt::srt_epoll_remove_usock(self.id, socket.id) };
         if result == 0 {
@@ -816,6 +1124,7 @@ impl Epoll {
         }
         error::handle_result((), result)
     }
+    #[allow(dead_code)]
     fn update(&self, socket: &SrtSocket, event: &srt::SRT_EPOLL_OPT) -> Result<()> {
         let result = unsafe {
             srt::srt_epoll_update_usock(
@@ -836,18 +1145,22 @@ impl Epoll {
                 timeout,
             )
         };
-        let num_changes = error::handle_result(result, result)? as usize;
-        array.truncate(num_changes);
-        Ok(array
-            .iter()
-            .map(|event| {
-                (
-                    SrtSocket { id: event.fd },
-                    srt::SRT_EPOLL_OPT(event.events.try_into().expect("invalid events")),
-                )
-            })
-            .collect())
+        if result == -1 {
+            error::handle_result(Vec::new(), result)
+        } else {
+            array.truncate(result as usize);
+            Ok(array
+                .iter()
+                .map(|event| {
+                    (
+                        SrtSocket { id: event.fd },
+                        srt::SRT_EPOLL_OPT(event.events.try_into().expect("invalid events")),
+                    )
+                })
+                .collect())
+        }
     }
+    #[allow(dead_code)]
     fn clear(&mut self) -> Result<()> {
         let result = unsafe { srt::srt_epoll_clear_usocks(self.id) };
         if result == 0 {
@@ -868,13 +1181,16 @@ impl Drop for Epoll {
 #[cfg(test)]
 mod tests {
     use crate as srt;
+    use futures::{
+        future,
+        io::{AsyncReadExt, AsyncWriteExt},
+    };
     use std::{
         io::{Read, Write},
         net::SocketAddr,
         sync::mpsc,
         thread,
     };
-
     #[test]
     fn test_connect_accept() {
         srt::startup().expect("failed startup");
@@ -911,14 +1227,14 @@ mod tests {
         thread::spawn(move || {
             let mut one = srt::builder()
                 .set_file_transmission_type()
-                .rendezvous("127.0.0.1:123", "127.0.0.1:234")
+                .rendezvous("127.0.0.1:123", "127.0.0.2:234")
                 .expect("fail rendezvous()");
             one.write_all(b"testing").expect("fail write()");
             assert!(one.close().is_ok());
         });
         let mut two = srt::builder()
             .set_file_transmission_type()
-            .rendezvous("127.0.0.1:234", "127.0.0.1:123")
+            .rendezvous("127.0.0.2:234", "127.0.0.1:123")
             .expect("fail rendezvous()");
         let mut buf = Vec::new();
         two.read_to_end(&mut buf).expect("fail read()");
@@ -926,6 +1242,73 @@ mod tests {
             std::str::from_utf8(&buf).expect("malformed message"),
             "testing"
         );
+        assert!(two.close().is_ok());
+        srt::cleanup().expect("failed cleanup");
+    }
+    #[async_std::test]
+    async fn test_connect_accept_async() {
+        srt::startup().expect("failed startup");
+        let (tx, rx) = mpsc::channel::<SocketAddr>();
+        let listen_task = async move {
+            let listen = srt::async_builder()
+                .set_file_transmission_type()
+                .listen("127.0.0.1:0", 1)
+                .expect("fail listen()");
+            let local = listen.local_addr().expect("fail local_addr()");
+            tx.send(local).expect("fail send through mpsc channel");
+            let (mut peer, _peer_addr) = listen.accept().await.expect("fail accep()");
+            peer.write_all(b"testing").await.expect("fail write()");
+            assert!(peer.close().await.is_ok());
+            assert!(listen.close().is_ok());
+        };
+        let connect_task = async move {
+            let addr = rx.recv().expect("fail recv through mpsc channel");
+            let mut connect = srt::async_builder()
+                .set_file_transmission_type()
+                .connect(addr)
+                .expect("fail start connect")
+                .await
+                .expect("fail connect");
+            let mut buf = Vec::new();
+            connect.read_to_end(&mut buf).await.expect("fail read()");
+            assert_eq!(
+                std::str::from_utf8(&buf).expect("malformed message"),
+                "testing"
+            );
+            assert!(connect.close().await.is_ok());
+        };
+        future::join(listen_task, connect_task).await;
+        srt::cleanup().expect("failed cleanup()");
+    }
+    #[async_std::test]
+    async fn test_rendezvous_async() {
+        srt::startup().expect("failed startup");
+        let one_task = async move {
+            let mut one = srt::async_builder()
+                .set_file_transmission_type()
+                .rendezvous("127.0.0.1:123", "127.0.0.2:234")
+                .expect("fail start rendezvous")
+                .await
+                .expect("fail rendezvous");
+            one.write_all(b"testing").await.expect("fail write()");
+            assert!(one.close().await.is_ok());
+        };
+        let two_task = async move {
+            let mut two = srt::async_builder()
+                .set_file_transmission_type()
+                .rendezvous("127.0.0.2:234", "127.0.0.1:123")
+                .expect("fail start rendezvous")
+                .await
+                .expect("fail rendezvous");
+            let mut buf = Vec::new();
+            two.read_to_end(&mut buf).await.expect("fail read()");
+            assert_eq!(
+                std::str::from_utf8(&buf).expect("malformed message"),
+                "testing"
+            );
+            assert!(two.close().await.is_ok());
+        };
+        future::join(one_task, two_task).await;
         srt::cleanup().expect("failed cleanup");
     }
 }
