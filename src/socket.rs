@@ -61,27 +61,25 @@ impl SrtSocket {
             for addr in addrs {
                 match addr {
                     SocketAddr::V4(addr) => {
-                        let addr = create_sockaddr_in(addr);
-                        let result;
-                        unsafe {
-                            result = srt::srt_bind(
+                        let sock_addr = create_sockaddr_in(addr);
+                        let result = unsafe {
+                            srt::srt_bind(
                                 self.id,
-                                &addr as *const sockaddr_in as *const sockaddr,
+                                &sock_addr as *const sockaddr_in as *const sockaddr,
                                 mem::size_of::<sockaddr_in>() as c_int,
-                            );
-                        }
+                            )
+                        };
                         return error::handle_result(self, result);
                     }
                     SocketAddr::V6(addr) => {
                         let addr = create_sockaddr_in6(addr);
-                        let result;
-                        unsafe {
-                            result = srt::srt_bind(
+                        let result = unsafe {
+                            srt::srt_bind(
                                 self.id,
                                 &addr as *const sockaddr_in6 as *const sockaddr,
                                 mem::size_of::<sockaddr_in6>() as c_int,
-                            );
-                        }
+                            )
+                        };
                         return error::handle_result(self, result);
                     }
                 }
@@ -124,16 +122,15 @@ impl SrtSocket {
             (Some(SocketAddr::V6(local)), Some(SocketAddr::V6(remote))) => {
                 let local_addr = create_sockaddr_in6(local);
                 let remote_addr = create_sockaddr_in6(remote);
-                let result;
-                unsafe {
-                    result = srt::srt_rendezvous(
+                let result = unsafe {
+                    srt::srt_rendezvous(
                         self.id,
                         &local_addr as *const sockaddr_in6 as *const sockaddr,
                         mem::size_of::<sockaddr_in6>() as c_int,
                         &remote_addr as *const sockaddr_in6 as *const sockaddr,
                         mem::size_of::<sockaddr_in6>() as c_int,
-                    );
-                }
+                    )
+                };
                 error::handle_result((), result)
             }
             _ => Err(SrtError::SockFail),
@@ -153,27 +150,25 @@ impl SrtSocket {
         match target_addr {
             SocketAddr::V4(target) => {
                 let target_addr = create_sockaddr_in(target);
-                let result;
-                unsafe {
-                    result = srt::srt_connect(
+                let result = unsafe {
+                    srt::srt_connect(
                         self.id,
                         &target_addr as *const sockaddr_in as *const sockaddr,
                         mem::size_of::<sockaddr_in>() as c_int,
-                    );
-                }
+                    )
+                };
                 return error::handle_result((), result);
             }
             SocketAddr::V6(target) => {
                 let id = unsafe { srt::srt_create_socket() };
                 let target_addr = create_sockaddr_in6(target);
-                let result;
-                unsafe {
-                    result = srt::srt_connect(
+                let result = unsafe {
+                    srt::srt_connect(
                         id,
                         &target_addr as *const sockaddr_in6 as *const sockaddr,
                         mem::size_of::<sockaddr_in6>() as c_int,
-                    );
-                }
+                    )
+                };
                 return error::handle_result((), result);
             }
         }
@@ -1342,25 +1337,18 @@ pub enum SrtCongestionController {
 
 #[cfg(target_os = "linux")]
 fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
-    let ip = addr.sin_addr.s_addr.to_le_bytes();
-    SocketAddrV4::new(Ipv4Addr::new(ip[0], ip[1], ip[2], ip[3]), addr.sin_port)
+    SocketAddrV4::new(
+        Ipv4Addr::from(addr.sin_addr.s_addr.to_le_bytes()),
+        u16::from_be(addr.sin_port),
+    )
 }
 
 #[cfg(target_os = "linux")]
 fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
     let ip = addr.sin6_addr.s6_addr;
     SocketAddrV6::new(
-        Ipv6Addr::new(
-            u16::from_be_bytes([ip[0], ip[1]]),
-            u16::from_be_bytes([ip[2], ip[3]]),
-            u16::from_be_bytes([ip[4], ip[5]]),
-            u16::from_be_bytes([ip[6], ip[7]]),
-            u16::from_be_bytes([ip[8], ip[9]]),
-            u16::from_be_bytes([ip[10], ip[11]]),
-            u16::from_be_bytes([ip[12], ip[13]]),
-            u16::from_be_bytes([ip[14], ip[15]]),
-        ),
-        addr.sin6_port,
+        Ipv6Addr::from(ip),
+        u16::from_be(addr.sin6_port),
         addr.sin6_flowinfo,
         addr.sin6_scope_id,
     )
@@ -1370,7 +1358,7 @@ fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
 fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
     sockaddr_in {
         sin_family: AF_INET as u16,
-        sin_port: addr.port(),
+        sin_port: addr.port().to_be(),
         sin_addr: in_addr {
             s_addr: u32::from_le_bytes(addr.ip().octets()),
         },
@@ -1382,7 +1370,7 @@ fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
 fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
     sockaddr_in6 {
         sin6_family: AF_INET6 as u16,
-        sin6_port: addr.port(),
+        sin6_port: addr.port().to_be(),
         sin6_flowinfo: addr.flowinfo(),
         sin6_addr: in6_addr {
             s6_addr: addr.ip().octets(),
@@ -1404,7 +1392,7 @@ fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
 fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
     let ip = unsafe { addr.sin6_addr.u.Word() };
     SocketAddrV6::new(
-        Ipv6Addr::new(ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7]),
+        Ipv6Addr::new(ip),
         addr.sin6_port,
         addr.sin6_flowinfo,
         unsafe { *addr.u.sin6_scope_id() },
@@ -1431,11 +1419,9 @@ fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
 #[cfg(target_os = "windows")]
 fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
     let mut sin6_addr = unsafe { mem::zeroed::<in6_addr>() };
-    let sin_ip = unsafe { sin6_addr.u.Byte_mut() };
-    *sin_ip = addr.ip().octets();
+    *unsafe { sin6_addr.u.Byte_mut() } = addr.ip().octets();
     let mut u = unsafe { mem::zeroed::<SOCKADDR_IN6_LH_u>() };
-    let scope_id = unsafe { u.sin6_scope_id_mut() };
-    *scope_id = addr.scope_id();
+    *unsafe { u.sin6_scope_id_mut() } = addr.scope_id();
     sockaddr_in6 {
         sin6_family: AF_INET6 as u16,
         sin6_port: addr.port(),
