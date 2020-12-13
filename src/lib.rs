@@ -608,8 +608,9 @@ impl AsyncRead for SrtAsyncStream {
                     let mut epoll = Epoll::new()?;
                     epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_IN)?;
                     thread::spawn(move || {
-                        if let Ok(_) = epoll.wait(-1) {}
-                        waker.wake();
+                        if let Ok(_) = epoll.wait(-1) {
+                            waker.wake();
+                        }
                     });
                     Poll::Pending
                 }
@@ -637,8 +638,9 @@ impl AsyncWrite for SrtAsyncStream {
                             let mut epoll = Epoll::new()?;
                             epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT)?;
                             thread::spawn(move || {
-                                epoll.wait(-1).expect("epoll wait error");
-                                waker.wake();
+                                if let Ok(_) = epoll.wait(-1) {
+                                    waker.wake();
+                                }
                             });
                             Poll::Pending
                         }
@@ -662,8 +664,9 @@ impl AsyncWrite for SrtAsyncStream {
                     let mut epoll = Epoll::new()?;
                     epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT)?;
                     thread::spawn(move || {
-                        epoll.wait(-1).expect("epoll wait error");
-                        waker.wake();
+                        if let Ok(_) = epoll.wait(-1) {
+                            waker.wake();
+                        }
                     });
                     Poll::Pending
                 }
@@ -687,8 +690,9 @@ impl AsyncWrite for SrtAsyncStream {
                     let mut epoll = Epoll::new()?;
                     epoll.add(&self.socket, &srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT)?;
                     thread::spawn(move || {
-                        epoll.wait(-1).expect("epoll wait error");
-                        waker.wake();
+                        if let Ok(_) = epoll.wait(-1) {
+                            waker.wake();
+                        }
                     });
                     Poll::Pending
                 }
@@ -769,22 +773,22 @@ impl Future for ConnectFuture {
                 SrtSocketStatus::Init => Poll::Ready(Err(SrtError::UnboundSock)),
                 SrtSocketStatus::Opened => Poll::Ready(Err(SrtError::InvOp)),
                 SrtSocketStatus::Listening => Poll::Ready(Err(SrtError::InvOp)),
-                SrtSocketStatus::Connecting => {
-                    if let Some(_reason) = self.socket.get_reject_reason() {
-                        Poll::Ready(Err(SrtError::ConnRej))
-                    } else {
+                SrtSocketStatus::Connecting => match self.socket.get_reject_reason() {
+                    error::SrtRejectReason::Unknown => {
                         let waker = cx.waker().clone();
                         let mut epoll = Epoll::new()?;
                         let events =
                             srt::SRT_EPOLL_OPT::SRT_EPOLL_OUT | srt::SRT_EPOLL_OPT::SRT_EPOLL_ERR;
                         epoll.add(&self.socket, &events)?;
                         thread::spawn(move || {
-                            epoll.wait(-1).expect("epoll wait error");
-                            waker.wake();
+                            if let Ok(_) = epoll.wait(-1) {
+                                waker.wake();
+                            }
                         });
                         Poll::Pending
                     }
-                }
+                    r => Poll::Ready(Err(SrtError::ConnRej(r))),
+                },
                 SrtSocketStatus::Closing => Poll::Ready(Err(SrtError::Closed)),
                 SrtSocketStatus::Closed => Poll::Ready(Err(SrtError::Closed)),
                 SrtSocketStatus::NonExist => Poll::Ready(Err(SrtError::InvSock)),

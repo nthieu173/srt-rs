@@ -14,7 +14,7 @@ pub enum SrtError {
     Success,
     ConnSetup,
     NoServer,
-    ConnRej,
+    ConnRej(SrtRejectReason),
     SockFail,
     SecFail,
     Closed,
@@ -85,7 +85,7 @@ impl From<SrtError> for io::Error {
                 SrtError::Success => ErrorKind::Other,
                 SrtError::ConnSetup => ErrorKind::ConnectionRefused,
                 SrtError::NoServer => ErrorKind::ConnectionRefused,
-                SrtError::ConnRej => ErrorKind::ConnectionRefused,
+                SrtError::ConnRej(_) => ErrorKind::ConnectionRefused,
                 SrtError::SockFail => ErrorKind::AddrNotAvailable,
                 SrtError::SecFail => ErrorKind::ConnectionRefused,
                 SrtError::ConnFail => ErrorKind::ConnectionRefused,
@@ -135,7 +135,7 @@ impl From<srt::SRT_ERRNO> for SrtError {
             srt::SRT_ERRNO::SRT_SUCCESS => SrtError::Success,
             srt::SRT_ERRNO::SRT_ECONNSETUP => SrtError::ConnSetup,
             srt::SRT_ERRNO::SRT_ENOSERVER => SrtError::NoServer,
-            srt::SRT_ERRNO::SRT_ECONNREJ => SrtError::ConnRej,
+            srt::SRT_ERRNO::SRT_ECONNREJ => SrtError::ConnRej(SrtRejectReason::Unknown),
             srt::SRT_ERRNO::SRT_ESOCKFAIL => SrtError::SockFail,
             srt::SRT_ERRNO::SRT_ESECFAIL => SrtError::SecFail,
             srt::SRT_ERRNO::SRT_ESCLOSED => SrtError::Closed,
@@ -177,48 +177,94 @@ impl From<srt::SRT_ERRNO> for SrtError {
     }
 }
 
-fn error_msg(err: &SrtError) -> &str {
+fn error_msg(err: &SrtError) -> String {
     match err {
-       SrtError::Unknown => "Internal error when setting the right error code",
-       SrtError::Success => "The value set when the last error was cleared and no error has occurred since then",
-       SrtError::ConnSetup => "General setup error resulting from internal system state",
-       SrtError::NoServer => "Connection timed out while attempting to connect to the remote address",
-       SrtError::ConnRej => "Connection has been rejected",
-       SrtError::SockFail => "An error occurred when trying to call a system function on an internally used UDP socket",
-       SrtError::SecFail => "A possible tampering with the handshake packets was detected, or encryption request wasn't properly fulfilled.",
-       SrtError::Closed => "A socket that was vital for an operation called in blocking mode has been closed during the operation",
-       SrtError::ConnFail => "General connection failure of unknown details",
-       SrtError::ConnLost => "The socket was properly connected, but the connection has been broken",
-       SrtError::NoConn => "The socket is not connected",
-       SrtError::Resource => "System or standard library error reported unexpectedly for unknown purpose",
-       SrtError::Thread => "System was unable to spawn a new thread when requried",
-       SrtError::NoBuf => "System was unable to allocate memory for buffers",
-       SrtError::SysObj => "System was unable to allocate system specific objects",
-       SrtError::File => "General filesystem error (for functions operating with file transmission)",
-       SrtError::InvRdOff => "Failure when trying to read from a given position in the file",
-       SrtError::RdPerm => "Read permission was denied when trying to read from file",
-       SrtError::InvWrOff => "Failed to set position in the written file",
-       SrtError::WrPerm => "Write permission was denied when trying to write to a file",
-       SrtError::InvOp => "Invalid operation performed for the current state of a socket",
-       SrtError::BoundSock => "The socket is currently bound and the required operation cannot be performed in this state",
-       SrtError::ConnSock => "The socket is currently connected and therefore performing the required operation is not possible",
-       SrtError::InvParam => "Call parameters for API functions have some requirements that were not satisfied",
-       SrtError::InvSock => "The API function required an ID of an entity (socket or group) and it was invalid",
-       SrtError::UnboundSock => "The operation to be performed on a socket requires that it first be explicitly bound",
-       SrtError::NoListen => "The socket passed for the operation is required to be in the listen state",
-       SrtError::RdvNoServ => "The required operation cannot be performed when the socket is set to rendezvous mode",
-       SrtError::RdvUnbound => "An attempt was made to connect to a socket set to rendezvous mode that was not first bound",
-       SrtError::InvalMsgApi => "The function was used incorrectly in the message API",
-       SrtError::InvalBufferApi => "The function was used incorrectly in the stream (buffer) API",
-       SrtError::DupListen => "The port tried to be bound for listening is already busy",
-       SrtError::LargeMsg => "Size exceeded",
-       SrtError::InvPollId => "The epoll ID passed to an epoll function is invalid",
-       SrtError::PollEmpty => "The epoll container currently has no subscribed sockets",
-       SrtError::AsyncFail => "General asynchronous failure (not in use currently)",
-       SrtError::AsyncSnd => "Sending operation is not ready to perform",
-       SrtError::AsyncRcv => "Receiving operation is not ready to perform",
-       SrtError::Timeout => "The operation timed out",
-       SrtError::Congest => "With SRTO_TSBPDMODE and SRTO_TLPKTDROP set to true, some packets were dropped by sender",
-        SrtError::PeerErr => "Receiver peer is writing to a file that the agent is sending",
+        SrtError::Unknown => "Internal error when setting the right error code".to_string(),
+        SrtError::Success => "The value set when the last error was cleared and no error has occurred since then".to_string(),
+        SrtError::ConnSetup => "General setup error resulting from internal system state".to_string(),
+        SrtError::NoServer => "Connection timed out while attempting to connect to the remote address".to_string(),
+        SrtError::ConnRej(reason) => format!("Connection has been rejected: {:?}", reason),
+        SrtError::SockFail => "An error occurred when trying to call a system function on an internally used UDP socket".to_string(),
+        SrtError::SecFail => "A possible tampering with the handshake packets was detected, or encryption request wasn't properly fulfilled.".to_string(),
+        SrtError::Closed => "A socket that was vital for an operation called in blocking mode has been closed during the operation".to_string(),
+        SrtError::ConnFail => "General connection failure of unknown details".to_string(),
+        SrtError::ConnLost => "The socket was properly connected, but the connection has been broken".to_string(),
+        SrtError::NoConn => "The socket is not connected".to_string(),
+        SrtError::Resource => "System or standard library error reported unexpectedly for unknown purpose".to_string(),
+        SrtError::Thread => "System was unable to spawn a new thread when requried".to_string(),
+        SrtError::NoBuf => "System was unable to allocate memory for buffers".to_string(),
+        SrtError::SysObj => "System was unable to allocate system specific objects".to_string(),
+        SrtError::File => "General filesystem error (for functions operating with file transmission)".to_string(),
+        SrtError::InvRdOff => "Failure when trying to read from a given position in the file".to_string(),
+        SrtError::RdPerm => "Read permission was denied when trying to read from file".to_string(),
+        SrtError::InvWrOff => "Failed to set position in the written file".to_string(),
+        SrtError::WrPerm => "Write permission was denied when trying to write to a file".to_string(),
+        SrtError::InvOp => "Invalid operation performed for the current state of a socket".to_string(),
+        SrtError::BoundSock => "The socket is currently bound and the required operation cannot be performed in this state".to_string(),
+        SrtError::ConnSock => "The socket is currently connected and therefore performing the required operation is not possible".to_string(),
+        SrtError::InvParam => "Call parameters for API functions have some requirements that were not satisfied".to_string(),
+        SrtError::InvSock => "The API function required an ID of an entity (socket or group) and it was invalid".to_string(),
+        SrtError::UnboundSock => "The operation to be performed on a socket requires that it first be explicitly bound".to_string(),
+        SrtError::NoListen => "The socket passed for the operation is required to be in the listen state".to_string(),
+        SrtError::RdvNoServ => "The required operation cannot be performed when the socket is set to rendezvous mode".to_string(),
+        SrtError::RdvUnbound => "An attempt was made to connect to a socket set to rendezvous mode that was not first bound".to_string(),
+        SrtError::InvalMsgApi => "The function was used incorrectly in the message API".to_string(),
+        SrtError::InvalBufferApi => "The function was used incorrectly in the stream (buffer) API".to_string(),
+        SrtError::DupListen => "The port tried to be bound for listening is already busy".to_string(),
+        SrtError::LargeMsg => "Size exceeded".to_string(),
+        SrtError::InvPollId => "The epoll ID passed to an epoll function is invalid".to_string(),
+        SrtError::PollEmpty => "The epoll container currently has no subscribed sockets".to_string(),
+        SrtError::AsyncFail => "General asynchronous failure (not in use currently)".to_string(),
+        SrtError::AsyncSnd => "Sending operation is not ready to perform".to_string(),
+        SrtError::AsyncRcv => "Receiving operation is not ready to perform".to_string(),
+        SrtError::Timeout => "The operation timed out".to_string(),
+        SrtError::Congest => "With SRTO_TSBPDMODE and SRTO_TLPKTDROP set to true, some packets were dropped by sender".to_string(),
+        SrtError::PeerErr => "Receiver peer is writing to a file that the agent is sending".to_string(),
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum SrtRejectReason {
+    Unknown,    // initial set when in progress
+    System,     // broken due to system function error
+    Peer,       // connection was rejected by peer
+    Resource,   // internal problem with resource allocation
+    Rogue,      // incorrect data in handshake messages
+    Backlog,    // listener's backlog exceeded
+    IPE,        // internal program error
+    Close,      // socket is closing
+    Version,    // peer is older version than agent's minimum set
+    RdvCookie,  // rendezvous cookie collision
+    BadSecret,  // wrong password
+    Unsecure,   // password required or unexpected
+    MessageAPI, // streamapi/messageapi collision
+    Congestion, // incompatible congestion-controller type
+    Filter,     // incompatible packet filter
+    Group,      // incompatible group
+    Timeout,    // connection timeout
+}
+
+impl From<srt::SRT_REJECT_REASON> for SrtRejectReason {
+    fn from(reject_reason: srt::SRT_REJECT_REASON) -> Self {
+        match reject_reason {
+            srt::SRT_REJECT_REASON::SRT_REJ_UNKNOWN => SrtRejectReason::Unknown, // initial set when in progress
+            srt::SRT_REJECT_REASON::SRT_REJ_SYSTEM => SrtRejectReason::System,
+            srt::SRT_REJECT_REASON::SRT_REJ_PEER => SrtRejectReason::Peer,
+            srt::SRT_REJECT_REASON::SRT_REJ_RESOURCE => SrtRejectReason::Resource,
+            srt::SRT_REJECT_REASON::SRT_REJ_ROGUE => SrtRejectReason::Rogue,
+            srt::SRT_REJECT_REASON::SRT_REJ_BACKLOG => SrtRejectReason::Backlog,
+            srt::SRT_REJECT_REASON::SRT_REJ_IPE => SrtRejectReason::IPE,
+            srt::SRT_REJECT_REASON::SRT_REJ_CLOSE => SrtRejectReason::Close,
+            srt::SRT_REJECT_REASON::SRT_REJ_VERSION => SrtRejectReason::Version,
+            srt::SRT_REJECT_REASON::SRT_REJ_RDVCOOKIE => SrtRejectReason::RdvCookie,
+            srt::SRT_REJECT_REASON::SRT_REJ_BADSECRET => SrtRejectReason::BadSecret,
+            srt::SRT_REJECT_REASON::SRT_REJ_UNSECURE => SrtRejectReason::Unsecure,
+            srt::SRT_REJECT_REASON::SRT_REJ_MESSAGEAPI => SrtRejectReason::MessageAPI,
+            srt::SRT_REJECT_REASON::SRT_REJ_CONGESTION => SrtRejectReason::Congestion,
+            srt::SRT_REJECT_REASON::SRT_REJ_FILTER => SrtRejectReason::Filter,
+            srt::SRT_REJECT_REASON::SRT_REJ_GROUP => SrtRejectReason::Group,
+            srt::SRT_REJECT_REASON::SRT_REJ_TIMEOUT => SrtRejectReason::Timeout,
+            _ => unreachable!("unrecognized SRT_REJECT_REASON"),
+        }
     }
 }

@@ -6,7 +6,7 @@ use srt::sockaddr;
 
 use std::{
     convert::TryInto,
-    ffi::{c_void, CStr},
+    ffi::c_void,
     iter::FromIterator,
     mem,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
@@ -614,15 +614,9 @@ impl SrtSocket {
         };
         error::handle_result(msecs, result)
     }
-    pub fn get_reject_reason(&self) -> Option<&str> {
+    pub fn get_reject_reason(&self) -> error::SrtRejectReason {
         let result = unsafe { srt::srt_getrejectreason(self.id) };
-        let reason = srt::SRT_REJECT_REASON(result.try_into().expect("invalid reject code"));
-        if reason == srt::SRT_REJECT_REASON::SRT_REJ_UNKNOWN {
-            None
-        } else {
-            let result = unsafe { CStr::from_ptr(srt::srt_rejectreason_str(result)) };
-            Some(result.to_str().expect("malformed reject reason"))
-        }
+        srt::SRT_REJECT_REASON(result.try_into().expect("invalid reject code")).into()
     }
     pub fn get_rendezvous(&self) -> Result<bool> {
         let mut rendezvous = false;
