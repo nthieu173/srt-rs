@@ -1207,7 +1207,6 @@ mod tests {
             assert!(listen.close().is_ok());
         });
         let addr = rx.recv().expect("fail recv through mpsc channel");
-        println!("{}", addr);
         let mut connect = srt::builder()
             .set_file_transmission_type()
             .connect(format!("127.0.0.1:{}", addr.port()))
@@ -1273,7 +1272,6 @@ mod tests {
             assert!(listen.close().is_ok());
         });
         let addr = rx.recv().expect("fail recv through mpsc channel");
-        println!("{}", addr);
         let mut connect = srt::builder().connect(addr).expect("fail connect()");
         let mut buf = Vec::new();
         connect.read_to_end(&mut buf).expect("fail read()");

@@ -1384,7 +1384,7 @@ fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
     let ip = unsafe { addr.sin_addr.S_un.S_un_b() };
     SocketAddrV4::new(
         Ipv4Addr::new(ip.s_b1, ip.s_b2, ip.s_b3, ip.s_b4),
-        addr.sin_port,
+        u16::from_be(addr.sin_port),
     )
 }
 
@@ -1392,8 +1392,8 @@ fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
 fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
     let ip = unsafe { addr.sin6_addr.u.Word() };
     SocketAddrV6::new(
-        Ipv6Addr::new(ip),
-        addr.sin6_port,
+        Ipv6Addr::from(*ip),
+        u16::from_be(addr.sin6_port),
         addr.sin6_flowinfo,
         unsafe { *addr.u.sin6_scope_id() },
     )
@@ -1410,7 +1410,7 @@ fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
     sin_ip.s_b4 = ip[3];
     sockaddr_in {
         sin_family: AF_INET as u16,
-        sin_port: addr.port(),
+        sin_port: addr.port().to_be(),
         sin_addr,
         sin_zero: [0; 8],
     }
@@ -1424,7 +1424,7 @@ fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
     *unsafe { u.sin6_scope_id_mut() } = addr.scope_id();
     sockaddr_in6 {
         sin6_family: AF_INET6 as u16,
-        sin6_port: addr.port(),
+        sin6_port: addr.port().to_be(),
         sin6_flowinfo: addr.flowinfo(),
         sin6_addr,
         u,
