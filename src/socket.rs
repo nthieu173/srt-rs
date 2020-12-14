@@ -2,6 +2,7 @@ use crate::error;
 
 use error::SrtError;
 use libsrt_sys as srt;
+use os_socketaddr::{self, OsSocketAddr};
 use srt::sockaddr;
 
 use std::{
@@ -9,23 +10,15 @@ use std::{
     ffi::c_void,
     iter::FromIterator,
     mem,
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs},
+    net::{SocketAddr, ToSocketAddrs},
     os::raw::{c_char, c_int},
 };
 
-#[cfg(target_os = "linux")]
-use libc::{in6_addr, in_addr, linger, sockaddr_in, sockaddr_in6, AF_INET, AF_INET6};
+#[cfg(target_family = "unix")]
+use libc::linger;
 
 #[cfg(target_os = "windows")]
-use winapi::{
-    shared::{
-        in6addr::in6_addr,
-        inaddr::in_addr,
-        ws2def::{AF_INET, AF_INET6, SOCKADDR_IN as sockaddr_in},
-        ws2ipdef::{SOCKADDR_IN6_LH_u, SOCKADDR_IN6_LH as sockaddr_in6},
-    },
-    um::winsock2::linger,
-};
+use winapi::um::winsock2::linger;
 
 type Result<T> = std::result::Result<T, SrtError>;
 
@@ -59,30 +52,15 @@ impl SrtSocket {
     pub fn bind<A: ToSocketAddrs>(self, addrs: A) -> Result<Self> {
         if let Ok(addrs) = addrs.to_socket_addrs() {
             for addr in addrs {
-                match addr {
-                    SocketAddr::V4(addr) => {
-                        let sock_addr = create_sockaddr_in(addr);
-                        let result = unsafe {
-                            srt::srt_bind(
-                                self.id,
-                                &sock_addr as *const sockaddr_in as *const sockaddr,
-                                mem::size_of::<sockaddr_in>() as c_int,
-                            )
-                        };
-                        return error::handle_result(self, result);
-                    }
-                    SocketAddr::V6(addr) => {
-                        let addr = create_sockaddr_in6(addr);
-                        let result = unsafe {
-                            srt::srt_bind(
-                                self.id,
-                                &addr as *const sockaddr_in6 as *const sockaddr,
-                                mem::size_of::<sockaddr_in6>() as c_int,
-                            )
-                        };
-                        return error::handle_result(self, result);
-                    }
-                }
+                let os_addr: OsSocketAddr = addr.into();
+                let result = unsafe {
+                    srt::srt_bind(
+                        self.id,
+                        os_addr.as_ptr() as *const sockaddr,
+                        os_addr.len() as i32,
+                    )
+                };
+                return error::handle_result(self, result);
             }
         }
         Err(SrtError::SockFail)
@@ -104,36 +82,22 @@ impl SrtSocket {
         } else {
             return Err(SrtError::SockFail);
         };
-        match (local_addr, remote_addr) {
-            (Some(SocketAddr::V4(local)), Some(SocketAddr::V4(remote))) => {
-                let local_addr = create_sockaddr_in(local);
-                let remote_addr = create_sockaddr_in(remote);
-                let result = unsafe {
-                    srt::srt_rendezvous(
-                        self.id,
-                        &local_addr as *const sockaddr_in as *const sockaddr,
-                        mem::size_of::<sockaddr_in>() as c_int,
-                        &remote_addr as *const sockaddr_in as *const sockaddr,
-                        mem::size_of::<sockaddr_in>() as c_int,
-                    )
-                };
-                error::handle_result((), result)
-            }
-            (Some(SocketAddr::V6(local)), Some(SocketAddr::V6(remote))) => {
-                let local_addr = create_sockaddr_in6(local);
-                let remote_addr = create_sockaddr_in6(remote);
-                let result = unsafe {
-                    srt::srt_rendezvous(
-                        self.id,
-                        &local_addr as *const sockaddr_in6 as *const sockaddr,
-                        mem::size_of::<sockaddr_in6>() as c_int,
-                        &remote_addr as *const sockaddr_in6 as *const sockaddr,
-                        mem::size_of::<sockaddr_in6>() as c_int,
-                    )
-                };
-                error::handle_result((), result)
-            }
-            _ => Err(SrtError::SockFail),
+
+        if let (Some(local), Some(remote)) = (local_addr, remote_addr) {
+            let os_local: OsSocketAddr = local.into();
+            let os_remote: OsSocketAddr = remote.into();
+            let result = unsafe {
+                srt::srt_rendezvous(
+                    self.id,
+                    os_local.as_ptr() as *const sockaddr,
+                    os_local.len() as i32,
+                    os_remote.as_ptr() as *const sockaddr,
+                    os_remote.len() as i32,
+                )
+            };
+            error::handle_result((), result)
+        } else {
+            Err(SrtError::SockFail)
         }
     }
     pub fn connect<A: ToSocketAddrs>(&self, addrs: A) -> Result<()> {
@@ -147,31 +111,15 @@ impl SrtSocket {
         } else {
             return Err(SrtError::SockFail);
         };
-        match target_addr {
-            SocketAddr::V4(target) => {
-                let target_addr = create_sockaddr_in(target);
-                let result = unsafe {
-                    srt::srt_connect(
-                        self.id,
-                        &target_addr as *const sockaddr_in as *const sockaddr,
-                        mem::size_of::<sockaddr_in>() as c_int,
-                    )
-                };
-                return error::handle_result((), result);
-            }
-            SocketAddr::V6(target) => {
-                let id = unsafe { srt::srt_create_socket() };
-                let target_addr = create_sockaddr_in6(target);
-                let result = unsafe {
-                    srt::srt_connect(
-                        id,
-                        &target_addr as *const sockaddr_in6 as *const sockaddr,
-                        mem::size_of::<sockaddr_in6>() as c_int,
-                    )
-                };
-                return error::handle_result((), result);
-            }
-        }
+        let os_target: OsSocketAddr = target_addr.into();
+        let result = unsafe {
+            srt::srt_connect(
+                self.id,
+                os_target.as_ptr() as *const sockaddr,
+                os_target.len() as i32,
+            )
+        };
+        return error::handle_result((), result);
     }
     pub fn listen(&self, backlog: i32) -> Result<()> {
         let result = unsafe { srt::srt_listen(self.id, backlog) };
@@ -182,84 +130,51 @@ impl SrtSocket {
 //Public operational methods
 impl SrtSocket {
     pub fn local_addr(&self) -> Result<SocketAddr> {
-        let mut addr = unsafe {
-            mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>(
-                [0; mem::size_of::<sockaddr_in6>()],
-            )
-        };
-        let mut addrlen: c_int = mem::size_of::<sockaddr_in6>() as i32;
+        let mut addr = OsSocketAddr::new();
+        let mut addrlen: c_int = addr.capacity() as i32;
         let result = unsafe {
             srt::srt_getsockname(
                 self.id,
-                &mut addr as *mut sockaddr_in6 as *mut sockaddr,
+                addr.as_mut_ptr() as *mut sockaddr,
                 &mut addrlen as *mut c_int,
             )
         };
         if result == -1 {
             error::handle_result("0.0.0.0:0".parse().unwrap(), result)
         } else {
-            let local_addr = match addr.sin6_family as i32 {
-                AF_INET => {
-                    SocketAddr::V4(create_socket_addr_v4(unsafe { mem::transmute_copy(&addr) }))
-                }
-                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
-                _ => unreachable!("libsrt returned a socket with an unrecognized family"),
-            };
-            error::handle_result(local_addr, 0)
+            error::handle_result(addr.into_addr().unwrap(), 0)
         }
     }
     pub fn peer_addr(&self) -> Result<SocketAddr> {
-        let mut addr = unsafe {
-            mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>(
-                [0; mem::size_of::<sockaddr_in6>()],
-            )
-        };
-        let mut addrlen: c_int = mem::size_of::<sockaddr_in6>() as i32;
+        let mut addr = OsSocketAddr::new();
+        let mut addrlen: c_int = addr.capacity() as i32;
         let result = unsafe {
             srt::srt_getpeername(
                 self.id,
-                &mut addr as *mut sockaddr_in6 as *mut sockaddr,
+                addr.as_mut_ptr() as *mut sockaddr,
                 &mut addrlen as *mut c_int,
             )
         };
         if result == -1 {
             error::handle_result("0.0.0.0:0".parse().unwrap(), result)
         } else {
-            let peer_addr = match addr.sin6_family as i32 {
-                AF_INET => {
-                    SocketAddr::V4(create_socket_addr_v4(unsafe { mem::transmute_copy(&addr) }))
-                }
-                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
-                _ => unreachable!("libsrt returned a socket with an unrecognized family"),
-            };
-            error::handle_result(peer_addr, result)
+            error::handle_result(addr.into_addr().unwrap(), result)
         }
     }
     pub fn accept(&self) -> Result<(Self, SocketAddr)> {
-        let mut addr = unsafe {
-            mem::transmute::<[u8; mem::size_of::<sockaddr_in6>()], sockaddr_in6>(
-                [0; mem::size_of::<sockaddr_in6>()],
-            )
-        };
-        let mut _addrlen: c_int = mem::size_of::<sockaddr_in6>() as i32;
+        let mut addr = OsSocketAddr::new();
+        let mut _addrlen: c_int = addr.capacity() as i32;
         let result = unsafe {
             srt::srt_accept(
                 self.id,
-                &mut addr as *mut sockaddr_in6 as *mut libsrt_sys::sockaddr,
+                addr.as_mut_ptr() as *mut sockaddr,
                 &mut _addrlen as *mut c_int,
             )
         };
         if result == -1 {
             error::handle_result((Self { id: 0 }, "0.0.0.0:0".parse().unwrap()), result)
         } else {
-            let peer_addr = match addr.sin6_family as i32 {
-                AF_INET => {
-                    SocketAddr::V4(create_socket_addr_v4(unsafe { mem::transmute_copy(&addr) }))
-                }
-                AF_INET6 => SocketAddr::V6(create_socket_addr_v6(addr)),
-                f => unreachable!("libsrt returned a socket with an unrecognized family {}", f),
-            };
-            Ok((Self { id: result }, peer_addr))
+            Ok((Self { id: result }, addr.into_addr().unwrap()))
         }
     }
     pub fn close(self) -> Result<()> {
@@ -961,7 +876,7 @@ impl SrtSocket {
         };
         error::handle_result((), result)
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     pub fn set_linger(&self, secs: i32) -> Result<()> {
         let lin = linger {
             l_onoff: (secs > 0) as i32,
@@ -1333,100 +1248,4 @@ pub enum SrtTransmissionType {
 pub enum SrtCongestionController {
     Live,
     File,
-}
-
-#[cfg(target_os = "linux")]
-fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
-    SocketAddrV4::new(
-        Ipv4Addr::from(addr.sin_addr.s_addr.to_le_bytes()),
-        u16::from_be(addr.sin_port),
-    )
-}
-
-#[cfg(target_os = "linux")]
-fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
-    let ip = addr.sin6_addr.s6_addr;
-    SocketAddrV6::new(
-        Ipv6Addr::from(ip),
-        u16::from_be(addr.sin6_port),
-        addr.sin6_flowinfo,
-        addr.sin6_scope_id,
-    )
-}
-
-#[cfg(target_os = "linux")]
-fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
-    sockaddr_in {
-        sin_family: AF_INET as u16,
-        sin_port: addr.port().to_be(),
-        sin_addr: in_addr {
-            s_addr: u32::from_le_bytes(addr.ip().octets()),
-        },
-        sin_zero: [0; 8],
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
-    sockaddr_in6 {
-        sin6_family: AF_INET6 as u16,
-        sin6_port: addr.port().to_be(),
-        sin6_flowinfo: addr.flowinfo(),
-        sin6_addr: in6_addr {
-            s6_addr: addr.ip().octets(),
-        },
-        sin6_scope_id: addr.scope_id(),
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn create_socket_addr_v4(addr: sockaddr_in) -> SocketAddrV4 {
-    let ip = unsafe { addr.sin_addr.S_un.S_un_b() };
-    SocketAddrV4::new(
-        Ipv4Addr::new(ip.s_b1, ip.s_b2, ip.s_b3, ip.s_b4),
-        u16::from_be(addr.sin_port),
-    )
-}
-
-#[cfg(target_os = "windows")]
-fn create_socket_addr_v6(addr: sockaddr_in6) -> SocketAddrV6 {
-    let ip = unsafe { addr.sin6_addr.u.Word() };
-    SocketAddrV6::new(
-        Ipv6Addr::from(*ip),
-        u16::from_be(addr.sin6_port),
-        addr.sin6_flowinfo,
-        unsafe { *addr.u.sin6_scope_id() },
-    )
-}
-
-#[cfg(target_os = "windows")]
-fn create_sockaddr_in(addr: SocketAddrV4) -> sockaddr_in {
-    let mut sin_addr = unsafe { mem::zeroed::<in_addr>() };
-    let mut sin_ip = unsafe { sin_addr.S_un.S_un_b_mut() };
-    let ip = addr.ip().octets();
-    sin_ip.s_b1 = ip[0];
-    sin_ip.s_b2 = ip[1];
-    sin_ip.s_b3 = ip[2];
-    sin_ip.s_b4 = ip[3];
-    sockaddr_in {
-        sin_family: AF_INET as u16,
-        sin_port: addr.port().to_be(),
-        sin_addr,
-        sin_zero: [0; 8],
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn create_sockaddr_in6(addr: SocketAddrV6) -> sockaddr_in6 {
-    let mut sin6_addr = unsafe { mem::zeroed::<in6_addr>() };
-    *unsafe { sin6_addr.u.Byte_mut() } = addr.ip().octets();
-    let mut u = unsafe { mem::zeroed::<SOCKADDR_IN6_LH_u>() };
-    *unsafe { u.sin6_scope_id_mut() } = addr.scope_id();
-    sockaddr_in6 {
-        sin6_family: AF_INET6 as u16,
-        sin6_port: addr.port().to_be(),
-        sin6_flowinfo: addr.flowinfo(),
-        sin6_addr,
-        u,
-    }
 }
