@@ -1333,14 +1333,14 @@ mod tests {
         thread::spawn(move || {
             let mut one = srt::builder()
                 .set_file_transmission_type()
-                .rendezvous("127.0.0.4:4040", "127.0.0.5:5050")
+                .rendezvous("127.0.0.1:8080", "127.0.0.2:9090")
                 .expect("fail rendezvous()");
             one.write_all(b"testing").expect("fail write()");
             assert!(one.close().is_ok());
         });
         let mut two = srt::builder()
             .set_file_transmission_type()
-            .rendezvous("127.0.0.5:5050", "127.0.0.4:4040")
+            .rendezvous("127.0.0.2:9090", "127.0.0.1:8080")
             .expect("fail rendezvous()");
         let mut buf = Vec::new();
         two.read_to_end(&mut buf).expect("fail read()");
@@ -1357,7 +1357,7 @@ mod tests {
         let one_task = async move {
             let mut one = srt::async_builder()
                 .set_file_transmission_type()
-                .rendezvous("127.0.0.6:6060", "127.0.0.7:7070")
+                .rendezvous("127.0.0.1:8080", "127.0.0.2:9090")
                 .expect("fail start rendezvous")
                 .await
                 .expect("fail rendezvous");
@@ -1367,7 +1367,7 @@ mod tests {
         let two_task = async move {
             let mut two = srt::async_builder()
                 .set_file_transmission_type()
-                .rendezvous("127.0.0.7:7070", "127.0.0.6:6060")
+                .rendezvous("127.0.0.2:9090", "127.0.0.1:8080")
                 .expect("fail start rendezvous")
                 .await
                 .expect("fail rendezvous");
