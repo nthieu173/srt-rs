@@ -13,5 +13,6 @@ os:
   - windows
 
 script:
+  - cargo build --verbose
   - cargo test ipv4 --verbose -- --test-threads=1
 
