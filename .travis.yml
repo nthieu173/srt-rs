@@ -3,7 +3,10 @@ language: rust
 cache: cargo
 
 install:
-  - if [ $TRAVIS_OS_NAME = linux ]; then sudo apt-get install libssl-dev; fi
+  - if [ $TRAVIS_OS_NAME = linux ];
+      then sudo apt-get install libssl-dev;
+      export OPENSSL_INCLUDE_DIR=usr/local/opt/openssl/include;
+    fi
   - if [ $TRAVIS_OS_NAME = osx ]; then brew install openssl; fi
   - if [ $TRAVIS_OS_NAME = windows ]; then choco install openssl; fi
 
