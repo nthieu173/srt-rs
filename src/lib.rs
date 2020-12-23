@@ -1265,7 +1265,7 @@ mod tests {
         thread::spawn(move || {
             let listen = srt::builder()
                 .set_file_transmission_type()
-                .listen("127.0.0.2:0", 1)
+                .listen("127.0.0.1:0", 1)
                 .expect("fail listen()");
             let local = listen.local_addr().expect("fail local_addr()");
             tx.send(local).expect("fail send through mpsc channel");
@@ -1295,7 +1295,7 @@ mod tests {
         let listen_task = async move {
             let listen = srt::async_builder()
                 .set_file_transmission_type()
-                .listen("127.0.0.3:0", 1)
+                .listen("127.0.0.1:0", 1)
                 .expect("fail listen()");
             let local = listen.local_addr().expect("fail local_addr()");
             tx.send(local).expect("fail send through mpsc channel");
