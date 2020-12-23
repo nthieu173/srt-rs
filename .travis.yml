@@ -8,7 +8,14 @@ addons:
   chocolatey:
     packages: openssl
 
+install:
+  - if [ $TRAVIS_OS_NAME = windows ]; then choco install openssl; fi
+
 os:
   - linux
   - osx
   - windows
+
+script:
+  - cargo test --verbose -- --test-threads=1
+
