@@ -2,6 +2,15 @@ language: rust
 
 cache: cargo
 
+os:
+  - linux
+  - osx
+  - windows
+
+jobs:
+  allow_failures:
+    - os: osx
+
 install:
   - if [ $TRAVIS_OS_NAME = linux ]; then sudo apt-get install libssl-dev; fi
   - if [ $TRAVIS_OS_NAME = osx ]; then brew install openssl;
@@ -15,12 +24,6 @@ install:
       "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64";
     fi
 
-os:
-  - linux
-  - osx
-  - windows
-
 script:
   - cargo build --verbose
   - cargo test ipv4 --verbose -- --test-threads=1
-
