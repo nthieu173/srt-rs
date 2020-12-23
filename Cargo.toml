@@ -13,7 +13,9 @@ readme = "README.md"
 libsrt-sys = { path = "libsrt-sys", version = "1.4.13" }
 libc = "0.2"
 futures = "0.3"
-os_socketaddr = "0.1.1"
+
+os_socketaddr = { git = "https://github.com/nthieu173/os_socketaddr.git", branch = "kozuka-add_support_windows" }
+# os_socketaddr = "0.1.1"
 
 
 [target.'cfg(windows)'.dependencies]
