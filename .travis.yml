@@ -1,5 +1,7 @@
 language: rust
 
+cache: cargo
+
 install:
   - if [ $TRAVIS_OS_NAME = linux ]; then sudo apt-get install libssl-dev; fi
   - if [ $TRAVIS_OS_NAME = osx ]; then brew install openssl; fi
