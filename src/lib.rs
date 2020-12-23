@@ -1259,7 +1259,7 @@ mod tests {
         future::join(listen_task, connect_task).await;
     }
     #[test]
-    fn test_connect_accept() {
+    fn test_ipv4_connect_accept() {
         srt::startup().expect("failed startup");
         let (tx, rx) = mpsc::channel::<SocketAddr>();
         thread::spawn(move || {
@@ -1289,7 +1289,7 @@ mod tests {
         srt::cleanup().expect("failed cleanup()");
     }
     #[test]
-    fn test_connect_accept_async() {
+    fn test_ipv4_connect_accept_async() {
         srt::startup().expect("failed startup");
         let (tx, rx) = mpsc::channel::<SocketAddr>();
         let listen_task = async move {
@@ -1325,7 +1325,7 @@ mod tests {
     }
 
     #[test]
-    fn test_rendezvous() {
+    fn test_ipv4_rendezvous() {
         srt::startup().expect("failed startup");
         thread::spawn(move || {
             let mut one = srt::builder()
@@ -1349,7 +1349,7 @@ mod tests {
         srt::cleanup().expect("failed cleanup");
     }
     #[test]
-    fn test_rendezvous_async() {
+    fn test_ipv4_rendezvous_async() {
         srt::startup().expect("failed startup");
         let one_task = async move {
             let mut one = srt::async_builder()
