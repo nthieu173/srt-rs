@@ -255,7 +255,7 @@ impl SrtBuilder {
 }
 
 impl SrtBuilder {
-    #[cfg(target_os = "linux")]
+    #[cfg(target_family = "unix")]
     pub fn set_bind_to_device(mut self, device: &str) -> Self {
         self.opt_vec
             .push(SrtPreConnectOpt::BindToDevice(device.to_string()));
@@ -415,6 +415,7 @@ impl SrtBuilder {
     fn config_socket(self, socket: &SrtSocket) -> Result<()> {
         for opt in self.opt_vec {
             match opt {
+                #[cfg(target_family = "unix")]
                 SrtPreConnectOpt::BindToDevice(value) => socket.set_bind_to_device(value)?,
                 SrtPreConnectOpt::ConnTimeO(value) => socket.set_connection_timeout(value)?,
                 SrtPreConnectOpt::FC(value) => socket.set_flight_flag_size(value)?,
@@ -994,6 +995,7 @@ impl SrtAsyncBuilder {
     fn config_socket(self, socket: &SrtSocket) -> Result<()> {
         for opt in self.opt_vec {
             match opt {
+                #[cfg(target_family = "unix")]
                 SrtPreConnectOpt::BindToDevice(value) => socket.set_bind_to_device(value)?,
                 SrtPreConnectOpt::ConnTimeO(value) => socket.set_connection_timeout(value)?,
                 SrtPreConnectOpt::FC(value) => socket.set_flight_flag_size(value)?,
@@ -1045,6 +1047,7 @@ impl SrtAsyncBuilder {
 
 #[derive(Clone)]
 enum SrtPreConnectOpt {
+    #[cfg(target_family = "unix")]
     BindToDevice(String),
     ConnTimeO(i32),
     FC(i32),
