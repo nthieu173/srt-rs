@@ -1288,8 +1288,8 @@ mod tests {
         assert!(connect.close().is_ok());
         srt::cleanup().expect("failed cleanup()");
     }
-    #[async_std::test]
-    async fn test_connect_accept_async() {
+    #[test]
+    fn test_connect_accept_async() {
         srt::startup().expect("failed startup");
         let (tx, rx) = mpsc::channel::<SocketAddr>();
         let listen_task = async move {
@@ -1320,7 +1320,7 @@ mod tests {
             );
             assert!(connect.close().await.is_ok());
         };
-        future::join(listen_task, connect_task).await;
+        block_on(future::join(listen_task, connect_task));
         srt::cleanup().expect("failed cleanup()");
     }
 
@@ -1348,8 +1348,8 @@ mod tests {
         assert!(two.close().is_ok());
         srt::cleanup().expect("failed cleanup");
     }
-    #[async_std::test]
-    async fn test_rendezvous_async() {
+    #[test]
+    fn test_rendezvous_async() {
         srt::startup().expect("failed startup");
         let one_task = async move {
             let mut one = srt::async_builder()
@@ -1376,7 +1376,7 @@ mod tests {
             );
             assert!(two.close().await.is_ok());
         };
-        future::join(one_task, two_task).await;
+        block_on(future::join(one_task, two_task));
         srt::cleanup().expect("failed cleanup");
     }
 }
