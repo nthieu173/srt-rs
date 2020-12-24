@@ -65,11 +65,7 @@ impl SrtSocket {
         }
         Err(SrtError::SockFail)
     }
-    pub fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(
-        &self,
-        local: A,
-        remote: B,
-    ) -> Result<()> {
+    pub fn rendezvous<A: ToSocketAddrs>(&self, local: A, remote: A) -> Result<()> {
         let local_addr;
         if let Ok(mut addr) = local.to_socket_addrs() {
             local_addr = addr.next()

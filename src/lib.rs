@@ -263,11 +263,7 @@ impl SrtBuilder {
         socket.listen(backlog)?;
         Ok(SrtListener { socket })
     }
-    pub fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(
-        self,
-        local: A,
-        remote: B,
-    ) -> Result<SrtStream> {
+    pub fn rendezvous<A: ToSocketAddrs>(self, local: A, remote: A) -> Result<SrtStream> {
         let socket = SrtSocket::new()?;
         socket.set_rendezvous(true)?;
         self.config_socket(&socket)?;
@@ -869,11 +865,7 @@ impl SrtAsyncBuilder {
         socket.listen(backlog)?; // Still synchronous
         Ok(SrtAsyncListener { socket })
     }
-    pub fn rendezvous<A: ToSocketAddrs, B: ToSocketAddrs>(
-        self,
-        local: A,
-        remote: B,
-    ) -> Result<ConnectFuture> {
+    pub fn rendezvous<A: ToSocketAddrs>(self, local: A, remote: A) -> Result<ConnectFuture> {
         let socket = SrtSocket::new()?;
         socket.set_rendezvous(true)?;
         self.config_socket(&socket)?;
