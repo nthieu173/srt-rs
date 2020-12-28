@@ -69,6 +69,12 @@ impl SrtListener {
     }
 }
 
+impl Drop for SrtListener {
+    fn drop(&mut self) {
+        if let Err(_) = self.socket.close() {}
+    }
+}
+
 pub struct SrtStream {
     socket: SrtSocket,
 }
@@ -220,6 +226,12 @@ impl Write for SrtStream {
     }
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl Drop for SrtStream {
+    fn drop(&mut self) {
+        if let Err(_) = self.socket.close() {}
     }
 }
 
@@ -725,6 +737,12 @@ impl AsyncWrite for SrtAsyncStream {
     }
 }
 
+impl Drop for SrtAsyncStream {
+    fn drop(&mut self) {
+        if let Err(_) = self.socket.close() {}
+    }
+}
+
 pub struct SrtAsyncListener {
     socket: SrtSocket,
 }
@@ -740,6 +758,12 @@ impl SrtAsyncListener {
     }
     pub fn local_addr(&self) -> Result<SocketAddr> {
         self.socket.local_addr()
+    }
+}
+
+impl Drop for SrtAsyncListener {
+    fn drop(&mut self) {
+        if let Err(_) = self.socket.close() {}
     }
 }
 
